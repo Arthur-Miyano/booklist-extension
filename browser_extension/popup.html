@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>书单入库台</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <header class="app-header"><div class="brand"><span class="brand-mark" aria-hidden="true">书</span><span>书单入库台</span></div><button id="read" class="subtle">读取当前页</button></header>
+  <main>
+    <section class="source" aria-labelledby="booklist-name">
+      <p id="source-host" class="muted">当前网页的书单</p>
+      <h1 id="booklist-name">正在读取书单</h1>
+      <div class="source-bottom"><p id="source-note">沿用浏览器的登录状态</p><button id="load-all" class="text-button" hidden>加载全部</button></div>
+    </section>
+    <section class="library" aria-label="选择书籍">
+      <div class="library-tools"><input id="search" type="search" placeholder="搜索书名或作者" aria-label="搜索书名或作者"><button id="export" class="secondary" disabled>导出 Excel</button></div>
+      <div class="selection-bar"><label><input id="all" type="checkbox">全选</label><span id="selection">0 本已选</span><label class="clean-option"><input id="clean" type="checkbox">格式清洗</label></div>
+      <p id="clean-note" class="hint" hidden>保留英文作者名，只移除明确的系列名、宣传语和译者信息。</p>
+      <div id="books" class="books" aria-label="书籍列表"><div class="empty">正在读取当前网页…</div></div>
+      <p id="filtered-note" class="hint" hidden></p>
+    </section>
+    <section class="destination" aria-label="下载设置">
+      <div class="section-line"><h2>保存位置</h2><button id="choose-folder" class="text-button">选择文件夹</button></div>
+      <p id="target">选择父目录，自动创建书单文件夹</p>
+      <div class="settings-line"><label for="interval">每本完成后等待</label><div><input id="interval" type="number" min="30" max="3600" step="1" value="60" aria-describedby="interval-note"><span>秒</span></div></div>
+      <p id="interval-note" class="hint">30～3600 秒，修改后立即生效。相同文件名与大小自动跳过。</p>
+      <label class="rights"><input id="rights" type="checkbox">我拥有所选书籍的下载权</label>
+    </section>
+    <section id="transfer" class="transfer" hidden aria-labelledby="transfer-title">
+      <div class="section-line"><h2 id="transfer-title">下载任务</h2><span id="task-count" class="number"></span></div>
+      <p id="current-title"></p>
+      <progress id="file-progress" max="100" value="0" aria-label="当前书籍下载进度"></progress>
+      <div class="transfer-meta"><span id="bytes">等待开始</span><span id="speed" class="number">0 KB/s</span></div>
+      <progress id="batch-progress" max="100" value="0" aria-label="整批书籍完成进度"></progress>
+      <p id="batch-note" class="hint"></p>
+    </section>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <details id="diagnostic-box" hidden><summary>查看失败原因</summary><pre id="diagnostic"></pre></details>
+    <details class="help"><summary>使用说明</summary><p>打开书单页并登录，点击扩展即可读取。列表未加载完时点击“加载全部”。选择父目录后，书籍和 Excel 一起放入书单文件夹。</p><p>下载期间保持侧栏打开。暂停会丢弃当前未完成文件，继续时重试该本；关闭侧栏会中断任务。网站登录、验证或额度限制请在原网页处理。</p><p>重复识别依据同名与相同字节大小，包含“(1)”等同名副本；大小未知时下载后校验，大小不同保留两份。这项检查不等同于内容哈希。</p><p>格式清洗可随时取消，原始书名和作者不会丢失。只导出书单时无需授权网站下载。</p></details>
+  </main>
+  <footer class="action-bar"><button id="start" class="primary" disabled>下载并生成书单</button><button id="pause" class="secondary" hidden>暂停</button><button id="resume" class="primary" hidden>继续下载</button><button id="stop" class="subtle" hidden>停止</button></footer>
+  <script src="vendor/jszip.min.js"></script><script src="core.js"></script><script src="clean.js"></script><script src="excel.js"></script><script src="directory.js"></script><script src="popup.js"></script>
+</body></html>

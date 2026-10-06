@@ -1,0 +1,21 @@
+# Local records, archived versions and generated booklists
+.archive/
+.qa/
+.test-temp/
+web_output/
+__pycache__/
+*.py[cod]
+*.log
+*.pid
+*.part
+*.zip
+
+# Editor / OS / dependency files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+node_modules/
+.env
+.env.*
+!.env.example

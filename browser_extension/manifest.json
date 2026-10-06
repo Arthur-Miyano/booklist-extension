@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "书单入库台",
+  "version": "2.0.0",
+  "description": "在当前网页旁读取书单、导出 Excel、按书单目录下载与检查重复文件。无需本地服务。",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "scripting", "downloads", "storage", "sidePanel"],
+  "optional_host_permissions": ["https://*/*"],
+  "action": {"default_title": "打开书单入库台"},
+  "side_panel": {"default_path": "popup.html"},
+  "background": {"service_worker": "background.js"}
+}
