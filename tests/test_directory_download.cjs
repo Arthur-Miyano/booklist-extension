@@ -52,7 +52,8 @@ async function tests() {
     assert(queue.paused); assert.equal(queue.pending.length,2); assert.equal(queue.diagnostics[0].httpStatus,429);
     global.fetch = async()=>response(false); await queue.resume(); assert.equal(queue.results.length,2);
     let paused = false;
-    const pauseQueue = new DirectoryQueue(root,q=>{if(q.active&&!paused){paused=true;q.pause();}});
+    const pauseQueue = new DirectoryQueue(root,q=>{if(q.active.size&&!paused){paused=true;q.pause();}});
+    pauseQueue.waitForNext = async function(){now=Math.max(now,this.nextAt);};
     await pauseQueue.start([item]); assert.equal(pauseQueue.results.length,0); assert.equal(pauseQueue.pending.length,1); assert.equal(pauseQueue.error,'');
     await pauseQueue.resume(); assert.equal(pauseQueue.results.length,1);
     let stopped = false;

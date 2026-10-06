@@ -25,7 +25,7 @@ function fakeDirectory(name = '父目录') {
         }
       };
     },
-    async *entries() { for (const name of [...files.keys()]) yield [name,await this.getFileHandle(name)]; for(const [name,handle] of directories)yield[name,handle]; },
+    async *entries() { for (const name of [...files.keys()]) {if(files.has(name))yield [name,await this.getFileHandle(name)];} for(const [name,handle] of directories)yield[name,handle]; },
     async removeEntry(name) { files.delete(name); }
   };
 }

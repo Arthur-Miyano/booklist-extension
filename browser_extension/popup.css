@@ -52,6 +52,7 @@ input::placeholder { color:var(--muted); opacity:1; }
 #target { margin:7px 0 16px; overflow-wrap:anywhere; color:var(--muted); font-size:12px; }
 .settings-line { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:13px; }
 .settings-line div { display:flex; align-items:center; gap:8px; }
+.concurrency-line { margin-top:10px; }
 input[type=number] { width:78px; border:1px solid var(--line); border-radius:8px; padding:7px 9px; background:var(--surface); color:var(--text); font-variant-numeric:tabular-nums; }
 #interval-note { margin-top:8px; }
 .rights { font-size:12px; margin-top:16px; }
@@ -63,6 +64,9 @@ progress::-webkit-progress-bar { background:var(--line); }
 progress::-webkit-progress-value { background:var(--accent); border-radius:4px; }
 progress:indeterminate { opacity:.65; }
 .transfer-meta { display:flex; justify-content:space-between; gap:8px; font-size:12px; margin:8px 0 16px; color:var(--muted); }
+.active-downloads { display:grid; gap:14px; max-height:260px; overflow:auto; margin-bottom:16px; scrollbar-width:thin; }
+.active-title { font-size:12px; overflow-wrap:anywhere; margin-bottom:6px; }
+.active-meta { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 8px; font-size:11px; color:var(--muted); margin-top:6px; }
 #batch-progress { height:3px; }
 #batch-note { margin-top:8px; }
 .status { font-size:12px; margin-top:14px; overflow-wrap:anywhere; }

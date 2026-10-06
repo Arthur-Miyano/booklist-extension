@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const {prepareBrowserDownload,safeBrowserName,readBookPage,clickLoadMore} = require('../browser_extension/core.js');
 const manifest = require('../browser_extension/manifest.json');
-assert.equal(manifest.version,'2.0.0');
+assert.equal(manifest.version,'2.1.0');
 assert.deepEqual(manifest.permissions,['activeTab','scripting','downloads','storage','sidePanel']);
 assert(!manifest.action.default_popup); assert.equal(manifest.side_panel.default_path,'popup.html');
 const book={id:'1',title:'书名',author:'作者',extension:'EPUB',download:'/dl/1'};
@@ -28,5 +28,5 @@ handler({id:7,windowId:3});assert.deepEqual(JSON.parse(JSON.stringify(opened)),{
 const html=fs.readFileSync(require.resolve('../browser_extension/popup.html'),'utf8');
 const js=fs.readFileSync(require.resolve('../browser_extension/popup.js'),'utf8');
 assert(!js.includes('127.0.0.1'));assert(!js.includes('tabs.create'));assert(!js.includes('windows.create'));
-for(const key of ['load-all','search','export','choose-folder','interval','file-progress','batch-progress','speed','pause']) assert(html.includes(`id="${key}"`));
+for(const key of ['load-all','search','export','choose-folder','interval','concurrency','active-downloads','batch-progress','speed','pause']) assert(html.includes(`id="${key}"`));
 console.log('扩展入口、最小权限、链接校验、无本地服务/跳转、侧栏路由通过');

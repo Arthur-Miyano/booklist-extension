@@ -34,7 +34,7 @@ function renderBooks() {
   const search = element('search').value.trim().toLocaleLowerCase();
   const books = page?.books.map(displayBook).filter(book => `${book.title} ${book.author}`.toLocaleLowerCase().includes(search)) || [];
   const states = new Map(queue?.results.map(result => [result.id, result.skipped ? '已存在 · 大小相同' : '已保存']) || []);
-  if (queue?.active) states.set(queue.active.id, '正在下载');
+  for (const task of queue?.active || []) states.set(task.id, '正在下载');
   element('books').replaceChildren(...books.map(book => {
     const label = document.createElement('label'); label.className = 'book';
     const input = document.createElement('input'); input.type = 'checkbox'; input.dataset.id = book.id;
@@ -118,7 +118,8 @@ async function loadAll() {
 function formatBytes(bytes) { return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${(bytes / 1024).toFixed(1)} KB`; }
 let lastRenderedResult = '', lastPaint = 0;
 function showQueue(current) {
-  const signature = `${current.results.length}:${current.active?.id}:${current.running}:${current.paused}:${current.stopped}`;
+  const tasks = Array.from(current.active);
+  const signature = `${current.results.length}:${tasks.map(task => task.id).join('|')}:${current.concurrency}:${current.running}:${current.paused}:${current.stopped}`;
   const now = Date.now();
   if (signature === lastRenderedResult && now - lastPaint < 200) return;
   lastPaint = now;
@@ -130,20 +131,30 @@ function showQueue(current) {
   element('transfer').hidden = false;
   element('task-count').textContent = `${processed} / ${total} 本`;
   element('batch-progress').value = total ? processed / total * 100 : 0;
-  element('batch-note').textContent = `已保存 ${saved} 本 · 已跳过 ${skipped} 本 · 剩余 ${current.pending.length} 本`;
+  element('batch-note').textContent = `已保存 ${saved} 本 · 已跳过 ${skipped} 本 · 剩余 ${current.pending.length + tasks.length} 本`;
   const wait = Math.max(0, Math.ceil((current.nextAt - now) / 1000));
-  element('current-title').textContent = current.active?.title || (current.paused ? '任务已暂停' : current.stopped ? '任务已停止' : current.pending.length ? `${wait} 秒后下载下一本` : '下载完成');
-  if (current.active && !current.total) element('file-progress').removeAttribute('value');
-  else element('file-progress').value = current.active ? Math.min(100, current.bytes / current.total * 100) : current.pending.length ? 0 : 100;
-  const phase = {connecting:'正在连接',receiving:'正在下载',checking:'校验大小',saving:'正在保存'}[current.phase];
-  element('bytes').textContent = current.active ? `${phase} · ${formatBytes(current.bytes)}${current.total ? ` / ${formatBytes(current.total)}` : ' · 总大小未知'}` : current.paused ? '继续时重试未完成书籍' : current.pending.length ? '下载间隔中' : '书籍与 Excel 已保存到书单文件夹';
-  element('speed').textContent = `${formatBytes(current.active && current.phase === 'receiving' ? current.speed : 0)}/s`;
+  const scheduling = current.stopped ? '已停止新增下载' : current.paused ? '已暂停新增下载' : tasks.length >= current.concurrency ? '等待空余名额' : current.pending.length ? `${wait} 秒后启动下一本` : '等待在途下载完成';
+  element('current-title').textContent = tasks.length ? `正在下载 ${tasks.length} 本 / 上限 ${current.concurrency} 本` : current.paused ? '任务已暂停' : current.stopped ? '任务已停止' : current.pending.length ? scheduling : '下载完成';
+  element('bytes').textContent = tasks.length ? scheduling : current.paused ? '继续时按原顺序重试' : current.pending.length ? '启动间隔中' : '书籍与 Excel 已保存到书单文件夹';
+  element('speed').textContent = `总速度 ${formatBytes(current.speed)}/s`;
+  element('active-downloads').replaceChildren(...tasks.map(task => {
+    const row = document.createElement('div');
+    const title = document.createElement('p'); title.className = 'active-title'; title.textContent = task.title;
+    const progress = document.createElement('progress'); progress.max = 100; progress.ariaLabel = `${task.title} 下载进度`;
+    if (task.total) progress.value = Math.min(100, task.bytes / task.total * 100); else progress.removeAttribute('value');
+    const meta = document.createElement('div'); meta.className = 'active-meta';
+    const bytes = document.createElement('span'); const speed = document.createElement('span'); speed.className = 'number';
+    const phase = {connecting:'连接中',receiving:'下载中',checking:'校验大小',saving:'保存中'}[task.phase];
+    bytes.textContent = `${phase} · ${formatBytes(task.bytes)}${task.total ? ` / ${formatBytes(task.total)}` : ' · 总大小未知'}`;
+    speed.textContent = `${formatBytes(task.phase === 'receiving' ? task.speed : 0)}/s`;
+    meta.append(bytes, speed); row.append(title, progress, meta); return row;
+  }));
   element('diagnostic-box').hidden = !current.diagnostics.length;
   element('diagnostic').textContent = JSON.stringify(current.diagnostics.slice(-5), null, 2);
-  if (current.error) status(current.error, true);
-  else if (current.paused) status('已暂停，未完成文件已清理。');
+  if (current.error) status(`${current.error}${tasks.length ? ' 其他已开始的下载继续，结束后可重试。' : ''}`, true);
+  else if (current.paused) status(tasks.length ? '正在中止在途任务，清理后可以继续。' : '已暂停，未完成文件已清理。');
   else if (current.stopped) status('已停止，已经保存的书籍和 Excel 保留。');
-  else if (!current.running && !current.pending.length) status(`已完成：保存 ${saved} 本，跳过 ${skipped} 本同名同大小文件。`);
+  else if (!current.running && !current.pending.length && !tasks.length) status(`已完成：保存 ${saved} 本，跳过 ${skipped} 本同名同大小文件。`);
   if (revealTransfer) element('transfer').scrollIntoView({block:'nearest'});
   update();
 }
@@ -172,13 +183,20 @@ element('choose-folder').addEventListener('click', async () => {
   if (busy()) return;
   try {
     const directory = await window.showDirectoryPicker({id:'booklist-download',mode:'readwrite'});
-    queue = new DirectoryQueue(directory, showQueue); target(); update();
+    queue = new DirectoryQueue(directory, showQueue);
+    queue.setConcurrency(Number(element('concurrency').value));
+    target(); update();
     status('保存位置已选择，将按书单名称创建子文件夹。');
   } catch (error) { if (error.name !== 'AbortError') status(`无法选择目录：${error.message}`, true); }
 });
 element('interval').addEventListener('change', async () => {
   if (!element('interval').reportValidity()) return;
   try { const seconds = Number(element('interval').value); if (queue) queue.setInterval(seconds); await chrome.storage.local.set({intervalSeconds:seconds}); }
+  catch (error) { status(error.message, true); }
+});
+element('concurrency').addEventListener('change', async () => {
+  if (!element('concurrency').reportValidity()) return;
+  try { const limit = Number(element('concurrency').value); if (queue) queue.setConcurrency(limit); await chrome.storage.local.set({concurrency:limit}); }
   catch (error) { status(error.message, true); }
 });
 element('export').addEventListener('click', async () => {
@@ -189,12 +207,13 @@ element('export').addEventListener('click', async () => {
   finally { preparing = false; renderBooks(); update(); }
 });
 element('start').addEventListener('click', async () => {
-  if (busy() || !queue || !element('rights').checked || !element('interval').reportValidity()) return;
+  if (busy() || !queue || !element('rights').checked || !element('interval').reportValidity() || !element('concurrency').reportValidity()) return;
   const books = selected(), downloadBooks = downloadable(books);
   if (!downloadBooks.length) return;
   preparing = true; renderBooks(); update();
   try {
     queue.setInterval(Number(element('interval').value));
+    queue.setConcurrency(Number(element('concurrency').value));
     // 权限请求必须直接来自这个点击动作，不能排在异步 Excel 生成之后。
     await authorizeDownload();
     const items = downloadBooks.map(book => prepareBrowserDownload(book, page.pageUrl, page.name));
@@ -223,9 +242,10 @@ window.addEventListener('beforeunload', event => { if (busy()) { event.preventDe
 window.addEventListener('pagehide', () => { cancelLoad = true; queue?.stop(); });
 async function initialize() {
   const currentWindow = await chrome.windows.getCurrent(); windowId = currentWindow.id;
-  const preferences = await chrome.storage.local.get('intervalSeconds');
+  const preferences = await chrome.storage.local.get(['intervalSeconds','concurrency']);
   const interval = preferences.intervalSeconds;
   element('interval').value = Number.isInteger(interval) && interval >= 30 && interval <= 3600 ? interval : 60;
+  element('concurrency').value = Number.isInteger(preferences.concurrency) && preferences.concurrency >= 1 && preferences.concurrency <= 10 ? preferences.concurrency : 1;
   const saved = await chrome.storage.session.get(`source-${windowId}`);
   await readCurrent(saved[`source-${windowId}`]?.tabId);
 }
