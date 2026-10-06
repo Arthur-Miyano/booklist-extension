@@ -1,9 +1,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const {prepareBrowserDownload,safeBrowserName,readBookPage,clickLoadMore} = require('../browser_extension/core.js');
+const {prepareBrowserDownload,safeBrowserName,readBookPage,clickLoadMore,booklistReadingState} = require('../browser_extension/core.js');
 const manifest = require('../browser_extension/manifest.json');
-assert.equal(manifest.version,'2.1.0');
+assert.equal(manifest.version,'2.2.0');
 assert.deepEqual(manifest.permissions,['activeTab','scripting','downloads','storage','sidePanel']);
 assert(!manifest.action.default_popup); assert.equal(manifest.side_panel.default_path,'popup.html');
 const book={id:'1',title:'书名',author:'作者',extension:'EPUB',download:'/dl/1'};
@@ -18,6 +18,19 @@ global.document={title:'示例书单 — Booklist',querySelector:()=>({textConte
 ]};
 const snapshot=readBookPage();assert.equal(snapshot.name,'示例书单');assert.equal(snapshot.books.length,1);assert.equal(snapshot.books[0].author,'作者');
 let clicked=false;
+global.document.querySelector=()=>null;
+global.document.querySelectorAll=selector=>selector==='z-bookcard'?[]:[{textContent:'评论 (28)'},{textContent:'BOOKS (127)'}];
+assert.equal(readBookPage().total,'127','必须读取截图中的BOOKS总数，而不是评论数量');
+global.document.querySelector=()=>({textContent:'20'});
+assert.equal(readBookPage().total,'127','明确BOOKS总数优先于其他计数');
+for(const [label,expected] of [['书籍（127）','127'],['BOOKS (1,027)','1027'],['BOOKS (0)','0']]) {
+  global.document.querySelectorAll=selector=>selector==='z-bookcard'?[]:[{textContent:label}];assert.equal(readBookPage().total,expected);
+}
+for(const [total,loaded,complete] of [['127',127,true],['127',20,false],['127',128,false],['',127,false],['0',0,true]]) {
+  assert.equal(booklistReadingState({total,books:Array(loaded)}).complete,complete);
+}
+global.document.querySelectorAll=()=>[{textContent:'显示更多',disabled:false,getAttribute:()=>null,getClientRects:()=>[{}],children:[],closest:()=>null,click(){clicked=true;}}];
+assert.equal(clickLoadMore(),true,'显示更多不限定必须是原生button标签');assert(clicked);clicked=false;
 global.document.querySelectorAll=()=>[{textContent:'Show more',disabled:true},{textContent:'Show more',disabled:false,getAttribute:()=>null,getClientRects:()=>[{}],click(){clicked=true;}}];
 assert.equal(clickLoadMore(),true);assert(clicked);
 global.document.querySelectorAll=()=>[{textContent:'Show more',disabled:false,getAttribute:()=>null,getClientRects:()=>[]}];

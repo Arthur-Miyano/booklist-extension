@@ -1,9 +1,24 @@
 function readBookPage() {
   const cards = Array.from(document.querySelectorAll('z-bookcard'));
+  // 此函数由 executeScript 独立注入，解析总数的代码必须位于函数内。
+  function count(text) {
+    const value = String(text || '').trim();
+    const match = value.match(/^(?:books?|书籍|书目|图书)\s*[(（]\s*([\d\s,，]+)\s*[)）]$/i);
+    const digits = (match ? match[1] : value).replace(/[,，\s]/g, '');
+    return /^\d+$/.test(digits) && Number.isSafeInteger(Number(digits)) ? digits : '';
+  }
+  let total = '';
+  for (const node of document.querySelectorAll('[role="tab"], a, button, li, span, div')) {
+    if (node.getClientRects && !node.getClientRects().length) continue;
+    // 优先页面明确的 BOOKS 总数，不提取评论/年份/文件大小。
+    if (!/^(?:books?|书籍|书目|图书)\s*[(（]/i.test(String(node.textContent || '').trim())) continue;
+    total = count(node.textContent); if (total) break;
+  }
+  if (!total) total = count(document.querySelector('.books_count')?.textContent);
   return {
     pageUrl: location.href,
     name: document.title.split(' — ')[0].trim() || '书单',
-    total: document.querySelector('.books_count')?.textContent.trim() || '',
+    total,
     books: cards.map(card => ({
       title: card.querySelector('[slot="title"]')?.textContent.trim() || '',
       author: card.querySelector('[slot="author"]')?.textContent.trim() || '',
@@ -39,11 +54,24 @@ function prepareBrowserDownload(book, pageUrl, name) {
 }
 
 function clickLoadMore() {
-  const button = Array.from(document.querySelectorAll('button, a, [role="button"]')).find(node =>
-    /^(show more|load more|显示更多|加载更多|更多书籍)$/i.test(node.textContent.trim()) &&
-    !node.disabled && node.getAttribute('aria-disabled') !== 'true' && node.getClientRects().length);
-  if (!button) return false;
-  button.click(); return true;
+  const matches = node => /^(show more|load more|显示更多|加载更多|更多书籍)$/i.test(String(node.value || node.textContent || '').trim());
+  const clickable = 'button, a, [role="button"], input[type="button"], input[type="submit"], z-button';
+  for (const node of document.querySelectorAll(`${clickable}, div, span`)) {
+    // 选最内层的标签后向上找点击控件，避免点击仅包裹按钮的外层容器。
+    if (!matches(node) || Array.from(node.children || []).some(matches)) continue;
+    const button = node.closest?.(clickable) || node;
+    if (button.disabled || button.getAttribute('disabled') !== null || button.getAttribute('aria-disabled') === 'true' || !button.getClientRects().length) continue;
+    button.scrollIntoView?.({block:'center'});
+    button.click(); return true;
+  }
+  return false;
 }
 
-if (typeof module !== 'undefined') module.exports = {readBookPage, safeBrowserName, prepareBrowserDownload, clickLoadMore};
+function booklistReadingState(page) {
+  const value = String(page.total ?? '').replace(/[,，\s]/g, '');
+  const expected = /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : null;
+  const loaded = page.books.length;
+  return {expected, loaded, complete: expected !== null && loaded === expected};
+}
+
+if (typeof module !== 'undefined') module.exports = {readBookPage, safeBrowserName, prepareBrowserDownload, clickLoadMore, booklistReadingState};

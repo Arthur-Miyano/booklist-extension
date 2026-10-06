@@ -28,7 +28,7 @@ function update() {
   element('stop').hidden = !queue?.running && !queue?.pending.length;
   element('rights').disabled = busy();
   element('load-all').disabled = busy() || reading;
-  element('load-all').textContent = loadingAll ? '停止加载' : '加载全部';
+  element('load-all').textContent = loadingAll ? '停止读取' : '继续读取';
 }
 function renderBooks() {
   const search = element('search').value.trim().toLocaleLowerCase();
@@ -56,7 +56,7 @@ function renderBooks() {
   element('filtered-note').textContent = `显示 ${books.length} 本；全选作用于整份已加载书单。`;
 }
 function applyPage(next) {
-  if (!next?.books?.length) throw new Error('当前页未识别到书单，请在书单网页点击扩展。');
+  if (!Array.isArray(next?.books) || (!next.books.length && booklistReadingState(next).expected !== 0)) throw new Error('当前页未识别到书单，请在书单网页点击扩展。');
   const same = page?.pageUrl === next.pageUrl;
   const allChosen = same && chosen.size === page.books.length;
   const old = chosen;
@@ -65,10 +65,11 @@ function applyPage(next) {
   page = next; chosen = new Set(page.books.filter(book => !same || allChosen || old.has(book.id)).map(book => book.id));
   element('booklist-name').textContent = page.name;
   element('source-host').textContent = new URL(page.pageUrl).hostname;
-  const total = Number(String(page.total).replace(/[,\s]/g, ''));
-  const partial = total > page.books.length;
-  element('source-note').textContent = `已读取 ${page.books.length} 本${partial ? ` / 共 ${total} 本` : ''}`;
-  element('load-all').hidden = !partial;
+  const state = booklistReadingState(page);
+  element('source-note').textContent = state.complete ? `读取成功 · ${state.loaded} / ${state.expected} 本，数量一致`
+    : state.expected === null ? `已读取 ${state.loaded} 本，未识别书单总数`
+    : `已读取 ${state.loaded} / ${state.expected} 本，${state.loaded < state.expected ? `尚缺 ${state.expected - state.loaded} 本` : '数量不一致'}`;
+  element('load-all').hidden = state.complete;
   target(); renderBooks(); update();
 }
 async function snapshot(tabId) {
@@ -78,6 +79,7 @@ async function snapshot(tabId) {
 async function readCurrent(tabId) {
   if (busy() || reading || loadingAll) { status('当前任务结束或停止后，可以读取其他书单。'); return; }
   reading = true; update();
+  let autoLoad = false;
   try {
     if (!Number.isInteger(tabId)) { const [tab] = await chrome.tabs.query({active: true, currentWindow: true}); tabId = tab.id; }
     const next = await snapshot(tabId); applyPage(next); sourceId = tabId;
@@ -85,9 +87,11 @@ async function readCurrent(tabId) {
     if (queue) { queue.results = []; queue.items = []; queue.diagnostics = []; queue.error = ''; queue.stopped = false; }
     element('transfer').hidden = true; element('diagnostic-box').hidden = true;
     element('rights').checked = false;
-    status('已读取当前页。书籍和 Excel 会保存到同一个书单文件夹。');
+    autoLoad = true;
+    status('正在自动读取并核对书单数量…');
   } catch (error) { status(`读取失败：${error.message}。请在目标网页再次点击工具栏扩展图标。`, true); if (!page) { element('booklist-name').textContent = '打开一份书单'; element('source-note').textContent = '支持网页中的书籍卡片'; renderBooks(); } }
   finally { reading = false; renderBooks(); update(); }
+  if (autoLoad) await loadAll();
 }
 async function loadAll() {
   if (loadingAll) { cancelLoad = true; return; }
@@ -95,23 +99,38 @@ async function loadAll() {
   loadingAll = true; cancelLoad = false; renderBooks(); update();
   try {
     // 只点击原网页的“加载更多”，不调用未公开接口，不发并发请求。
-    for (let step = 0; step < 500 && !cancelLoad; step++) {
-      const expected = Number(String(page.total).replace(/[,\s]/g, ''));
-      if (expected && page.books.length >= expected) break;
+    let batches = 0;
+    for (; batches < 500 && !cancelLoad; batches++) {
+      const state = booklistReadingState(page);
+      if (state.complete || (state.expected !== null && state.loaded > state.expected)) break;
       const count = page.books.length;
-      const [result] = await chrome.scripting.executeScript({target: {tabId: sourceId}, func: clickLoadMore});
-      if (!result.result) break;
-      let grew = false;
+      let grew = false, clicked = false;
       for (let poll = 0; poll < 25 && !cancelLoad; poll++) {
+        // 上一批加载时按钮可能暂时不可点击；只在尚未触发本批时重试，避免重复请求。
+        if (!clicked) {
+          const [result] = await chrome.scripting.executeScript({target: {tabId: sourceId}, func: clickLoadMore});
+          clicked = result.result;
+        }
         await new Promise(resolve => setTimeout(resolve, 600));
         const next = await snapshot(sourceId);
         if (next.pageUrl !== page.pageUrl) throw new Error('来源网页已切换，请重新读取当前页');
-        if (next.books.length > count) { applyPage(next); grew = true; status(`已读取 ${next.books.length} 本，正在加载更多…`); break; }
+        if (next.books.length > count) { applyPage(next); grew = true; status(`正在自动读取：${page.books.length}${booklistReadingState(page).expected !== null ? ` / ${booklistReadingState(page).expected}` : ''} 本…`); break; }
       }
-      if (!grew && !cancelLoad) throw new Error('等待加载更多超时，已保留读取到的书目；请检查原网页后再试');
+      if (!grew && !cancelLoad) {
+        if (!clicked) break;
+        const state = booklistReadingState(page);
+        throw new Error(`等待加载更多超时：已读取 ${state.loaded}${state.expected !== null ? ` / ${state.expected}` : ''} 本，尚未确认读全；可检查原网页后继续读取。`);
+      }
     }
-    const total = Number(String(page.total).replace(/[,\s]/g, ''));
-    status(cancelLoad ? `已停止加载，保留 ${page.books.length} 本。` : total > page.books.length ? `目前读取 ${page.books.length} / ${total} 本；原网页未提供可点击的加载按钮。` : `全部 ${page.books.length} 本已读取。`);
+    const verified = await snapshot(sourceId);
+    if (verified.pageUrl !== page.pageUrl) throw new Error('来源网页已切换，请重新读取当前页');
+    applyPage(verified);
+    const state = booklistReadingState(page);
+    if (state.complete) status(`读取成功：${state.loaded} / ${state.expected} 本，与书单标注数量一致。`);
+    else if (cancelLoad) status(`已停止读取，保留 ${state.loaded} 本；尚未确认读全。`);
+    else if (state.expected === null) status(`已读取 ${state.loaded} 本，但未识别页面总数，无法确认读全。`, true);
+    else if (state.loaded > state.expected) status(`数量不一致：读取 ${state.loaded} 本，页面标注 ${state.expected} 本，请检查原书单。`, true);
+    else status(`尚未读全：${state.loaded} / ${state.expected} 本，尚缺 ${state.expected - state.loaded} 本。${batches >= 500 ? '达到本次 500 批读取上限' : '未找到可点击的“显示更多”'}；可检查原网页后点击“继续读取”。`, true);
   } catch (error) { status(error.message, true); }
   finally { loadingAll = false; renderBooks(); update(); }
 }
