@@ -263,7 +263,7 @@ async function initialize() {
   const currentWindow = await chrome.windows.getCurrent(); windowId = currentWindow.id;
   const preferences = await chrome.storage.local.get(['intervalSeconds','concurrency']);
   const interval = preferences.intervalSeconds;
-  element('interval').value = Number.isInteger(interval) && interval >= 30 && interval <= 3600 ? interval : 60;
+  element('interval').value = Number.isFinite(interval) && interval >= 0 && Number.isFinite(interval * 1000) ? interval : 60;
   element('concurrency').value = Number.isInteger(preferences.concurrency) && preferences.concurrency >= 1 && preferences.concurrency <= 10 ? preferences.concurrency : 1;
   const saved = await chrome.storage.session.get(`source-${windowId}`);
   await readCurrent(saved[`source-${windowId}`]?.tabId);

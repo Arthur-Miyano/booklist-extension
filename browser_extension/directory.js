@@ -116,7 +116,7 @@ class DirectoryQueue {
   }
   get speed() { return Array.from(this.active).reduce((sum, task) => sum + (task.phase === 'receiving' ? task.speed : 0), 0); }
   setInterval(seconds) {
-    if (!Number.isInteger(seconds) || seconds < 30 || seconds > 3600) throw new Error('间隔请输入 30 至 3600 的整数秒');
+    if (!Number.isFinite(seconds) || seconds < 0 || !Number.isFinite(seconds * 1000)) throw new Error('间隔请输入有效的非负秒数，可使用小数');
     this.intervalSeconds = seconds;
     if (this.lastStartedAt !== null) this.nextAt = this.lastStartedAt + seconds * 1000;
   }

@@ -59,7 +59,8 @@ async function tests() {
     let stopped = false;
     const stopQueue = new DirectoryQueue(root,q=>{if(q.results.length===1&&!stopped){stopped=true;q.stop();}});
     stopQueue.waitForNext = async()=>{}; await stopQueue.start([item,item]); assert.equal(stopQueue.results.length,1); assert.equal(stopQueue.pending.length,0);
-    assert.throws(()=>queue.setInterval(0));
+    for(const seconds of [0,0.5,1,7200]) {queue.setInterval(seconds);assert.equal(queue.intervalSeconds,seconds);}
+    for(const seconds of [-1,NaN,Infinity]) assert.throws(()=>queue.setInterval(seconds));
     global.fetch = async()=>{throw new TypeError('Failed to fetch https://example.com/secret?token=hidden');};
     await queue.start([item]); assert.equal(queue.diagnostics[0].stage,'network'); assert(!queue.error.includes('token'));
     global.fetch = async()=>response(false);

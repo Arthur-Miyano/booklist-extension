@@ -9,7 +9,7 @@ class Element {
   addEventListener(type,fn){(this.events[type] ||= []).push(fn);}
   removeAttribute(name){delete this[name];}
   scrollIntoView(){this.revealed=true;}
-  reportValidity(){return this.tag!=='input' || (Number(this.value)>=Number(this.min||30)&&Number(this.value)<=Number(this.max||3600));}
+  reportValidity(){return this.tag!=='input' || (this.value!==''&&Number.isFinite(Number(this.value))&&Number(this.value)>=Number(this.min??0)&&Number(this.value)<=Number(this.max??Infinity));}
   async emit(type,event={}){if(this.disabled)return;for(const fn of this.events[type]||[]) await fn({target:this,...event});}
 }
 async function tests(){
@@ -36,6 +36,7 @@ async function tests(){
   const settle=async()=>{for(let i=0;i<100;i++){await new Promise(resolve=>setTimeout(resolve,1));if(elements['booklist-name'].textContent==='测试书单'&&!elements.read.disabled)return;}throw new Error('初始化未完成');};
   await settle();
   assert.equal(elements.selection.textContent,'3 / 3 本已选','打开侧栏后应自动加载到书单标注的总数');assert(elements.start.disabled);assert.equal(elements['load-all'].hidden,true);
+  for(const seconds of [0,0.25,7200]) {elements.interval.value=String(seconds);await elements.interval.emit('change');assert.equal(localPreferences.intervalSeconds,seconds);}
   await elements['load-all'].emit('click');assert.equal(elements.selection.textContent,'3 / 3 本已选');assert.equal(elements['load-all'].hidden,true);assert.equal(elements.books.children.length,3);
   elements.search.value='English';await elements.search.emit('input');assert.equal(elements.books.children.length,1);
   elements.search.value='';await elements.search.emit('input');
@@ -94,6 +95,7 @@ async function tests(){
   await elements.read.emit('click');assert(elements.status.textContent.includes('无法确认读全'));assert(!elements.status.textContent.includes('读取成功'));
   source={...source,pageUrl:'https://z-library.website/booklist/mismatch',books:bookBatch(21),total:'20'};
   await elements.read.emit('click');assert(elements.status.textContent.includes('数量不一致'));assert(!elements.status.textContent.includes('读取成功'));
-  console.log('完整侧栏流程与自动读取：127本多批展开/总数校验/缺107本/超时保留及继续/未知总数与超量不误报通过');
+  localPreferences.intervalSeconds=0;await vm.runInContext('initialize()',context);assert.equal(elements.interval.value,0,'重开侧栏不能把保存的0秒重置为默认60秒');
+  console.log('完整侧栏流程与自动读取、自由间隔及0秒恢复检查通过');
 }
 tests().catch(error=>{console.error(error);process.exitCode=1;});
