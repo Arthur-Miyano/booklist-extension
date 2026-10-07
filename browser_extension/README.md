@@ -1,4 +1,4 @@
-# 书单入库台浏览器扩展 2.2
+# z站书单便捷下载浏览器扩展 2.2
 
 在 Edge / Chrome 扩展管理页，加载此文件夹。点击工具栏图标即打开当前网页旁的侧栏，没有本地服务或跳转页面。
 
@@ -16,4 +16,4 @@
 
 JSZip 3.10.1（MIT）位于 vendor，许可证随包附带。无需 Python、Node、本地服务器或运行时依赖下载。
 
-完整说明与验证范围见 [项目 README](https://github.com/Arthur-Miyano/booklist-extension#readme)。
+完整说明与验证范围见 [项目 README](https://github.com/Arthur-Miyano/z-library-booklist-downloader#readme)。

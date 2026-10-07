@@ -1,4 +1,4 @@
-# 书单入库台
+# z站书单便捷下载
 
 在书单网页旁完成读取、选择、下载和 Excel 导出的一款 **Edge / Chrome 浏览器扩展**。
 
@@ -22,10 +22,10 @@
 
 使用支持 Side Panel API 的桌面版 Edge / Chrome。Chrome 最低版本为 116，建议使用最新版浏览器。
 
-1. 下载此仓库源码，或下载 [Releases](https://github.com/Arthur-Miyano/booklist-extension/releases) 中的扩展压缩包并解压。
+1. 下载此仓库源码，或下载 [Releases](https://github.com/Arthur-Miyano/z-library-booklist-downloader/releases) 中的扩展压缩包并解压。
 2. 打开 `edge://extensions` 或 `chrome://extensions`，开启“开发人员模式”。
 3. 点击“加载解压缩的扩展”，选择包含 `manifest.json` 的 **`browser_extension` 文件夹**。
-4. 将“书单入库台”固定到浏览器工具栏。
+4. 将“z站书单便捷下载”固定到浏览器工具栏。
 
 不需要安装 Python、Node.js 或其他运行环境。Node.js 仅用于开发测试。
 
