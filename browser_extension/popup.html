@@ -7,7 +7,9 @@
     <section class="source" aria-labelledby="booklist-name">
       <p id="source-host" class="muted">当前网页的书单</p>
       <h1 id="booklist-name">正在读取书单</h1>
-      <div class="source-bottom"><p id="source-note">沿用浏览器的登录状态</p><button id="load-all" class="text-button" hidden>继续读取</button></div>
+      <div class="source-bottom"><p id="source-note">沿用浏览器的登录状态</p><button id="load-all" class="text-button" hidden>自动读全</button></div>
+      <div class="settings-line"><label for="read-interval">两批展开之间等待</label><div><input id="read-interval" type="number" min="1" max="3600" step="any" value="3" required aria-describedby="read-note"><span>秒</span></div></div>
+      <p id="read-note" class="hint">打开侧栏仅读取已显示书籍。点击“自动读全”后按此间隔展开；网站显示错误时停止。</p>
     </section>
     <section class="library" aria-label="选择书籍">
       <div class="library-tools"><input id="search" type="search" placeholder="搜索书名或作者" aria-label="搜索书名或作者"><button id="export" class="secondary" disabled>导出 Excel</button></div>
@@ -34,7 +36,7 @@
     </section>
     <p id="status" class="status" role="status" aria-live="polite"></p>
     <details id="diagnostic-box" hidden><summary>查看失败原因</summary><pre id="diagnostic"></pre></details>
-    <details class="help"><summary>使用说明</summary><p>打开书单页并登录，点击扩展后自动连续触发“显示更多”。只有读取数量与 BOOKS 或书籍标签中的总数一致，才提示读取成功；可停止或继续读取。选择父目录后，书籍和 Excel 一起放入书单文件夹。</p><p>每次只启动一本，两次启动之间按设定的秒数等待，支持 0 和小数秒。设上限 10 本后，前一本未完成也可启动下一本；满额时等待一本结束。默认上限 1 本，保留逐本下载习惯。</p><p>下载期间保持侧栏打开。手动暂停会中止全部未完成文件，继续时按原顺序重试；发生错误只暂停新增任务，其他在途下载可完成，结束后可重试。关闭侧栏会中断任务。网站登录、验证或额度限制请在原网页处理。</p><p>重复识别依据同名与相同字节大小，包含“(1)”等同名副本；大小未知时下载后校验，大小不同保留两份。这项检查不等同于内容哈希。</p><p>格式清洗可随时取消，原始书名和作者不会丢失。只导出书单时无需授权网站下载。</p></details>
+    <details class="help"><summary>使用说明</summary><p>打开书单页并登录，点击扩展先读取已显示书籍；点击“自动读全”后按单独设定的间隔展开，遇到网站错误停止。只有读取数量与 BOOKS 或书籍标签中的总数一致，才提示读取成功；可停止或继续读取。选择父目录后，书籍和 Excel 一起放入书单文件夹。</p><p>每次只启动一本，两次启动之间按设定的秒数等待，支持 0 和小数秒。设上限 10 本后，前一本未完成也可启动下一本；满额时等待一本结束。默认上限 1 本，保留逐本下载习惯。</p><p>下载期间保持侧栏打开。手动暂停会中止全部未完成文件，继续时按原顺序重试；发生错误只暂停新增任务，其他在途下载可完成，结束后可重试。关闭侧栏会中断任务。网站登录、验证或额度限制请在原网页处理。</p><p>重复识别依据同名与相同字节大小，包含“(1)”等同名副本；大小未知时下载后校验，大小不同保留两份。这项检查不等同于内容哈希。</p><p>格式清洗可随时取消，原始书名和作者不会丢失。只导出书单时无需授权网站下载。</p></details>
   </main>
   <footer class="action-bar"><button id="start" class="primary" disabled>下载并生成书单</button><button id="pause" class="secondary" hidden>暂停</button><button id="resume" class="primary" hidden>继续下载</button><button id="stop" class="subtle" hidden>停止</button></footer>
   <script src="vendor/jszip.min.js"></script><script src="core.js"></script><script src="clean.js"></script><script src="excel.js"></script><script src="directory.js"></script><script src="popup.js"></script>

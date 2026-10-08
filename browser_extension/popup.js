@@ -28,7 +28,8 @@ function update() {
   element('stop').hidden = !queue?.running && !queue?.pending.length;
   element('rights').disabled = busy();
   element('load-all').disabled = busy() || reading;
-  element('load-all').textContent = loadingAll ? '停止读取' : '继续读取';
+  element('load-all').textContent = loadingAll ? '停止读取' : '自动读全';
+  element('read-interval').disabled = loadingAll || reading;
 }
 function renderBooks() {
   const search = element('search').value.trim().toLocaleLowerCase();
@@ -56,6 +57,8 @@ function renderBooks() {
   element('filtered-note').textContent = `显示 ${books.length} 本；全选作用于整份已加载书单。`;
 }
 function applyPage(next) {
+  if (!/^\/booklist\//.test(new URL(next.pageUrl).pathname)) throw new Error('请进入具体书单页后读取，首页和搜索页不会自动展开。');
+  if (next.siteError) throw new Error(next.siteError);
   if (!Array.isArray(next?.books) || (!next.books.length && booklistReadingState(next).expected !== 0)) throw new Error('当前页未识别到书单，请在书单网页点击扩展。');
   const same = page?.pageUrl === next.pageUrl;
   const allChosen = same && chosen.size === page.books.length;
@@ -79,7 +82,6 @@ async function snapshot(tabId) {
 async function readCurrent(tabId) {
   if (busy() || reading || loadingAll) { status('当前任务结束或停止后，可以读取其他书单。'); return; }
   reading = true; update();
-  let autoLoad = false;
   try {
     if (!Number.isInteger(tabId)) { const [tab] = await chrome.tabs.query({active: true, currentWindow: true}); tabId = tab.id; }
     const next = await snapshot(tabId); applyPage(next); sourceId = tabId;
@@ -87,20 +89,30 @@ async function readCurrent(tabId) {
     if (queue) { queue.results = []; queue.items = []; queue.diagnostics = []; queue.error = ''; queue.stopped = false; }
     element('transfer').hidden = true; element('diagnostic-box').hidden = true;
     element('rights').checked = false;
-    autoLoad = true;
-    status('正在自动读取并核对书单数量…');
-  } catch (error) { status(`读取失败：${error.message}。请在目标网页再次点击工具栏扩展图标。`, true); if (!page) { element('booklist-name').textContent = '打开一份书单'; element('source-note').textContent = '支持网页中的书籍卡片'; renderBooks(); } }
+    const state = booklistReadingState(page);
+    status(state.complete ? `读取成功：${state.loaded} / ${state.expected} 本，数量一致。` : state.loaded > state.expected && state.expected !== null ? '数量不一致，请检查原书单。' : state.expected === null ? `已读取 ${state.loaded} 本，未识别总数，无法确认读全。` : `已读取 ${state.loaded} / ${state.expected} 本；点击“自动读全”继续展开。`);
+  } catch (error) { page = null; chosen.clear(); sourceId = null; status(`读取失败：${error.message}`, true); element('booklist-name').textContent = '打开一份书单'; element('source-note').textContent = '请在具体书单页读取'; element('load-all').hidden = true; }
   finally { reading = false; renderBooks(); update(); }
-  if (autoLoad) await loadAll();
 }
 async function loadAll() {
   if (loadingAll) { cancelLoad = true; return; }
   if (!page || busy()) return;
+  if (!element('read-interval').reportValidity()) return;
+  if (booklistReadingState(page).expected === null) { status('未识别书单总数，已停止自动展开；请在原网页确认书单数量后重新读取。', true); return; }
+  const readInterval = Number(element('read-interval').value) * 1000;
   loadingAll = true; cancelLoad = false; renderBooks(); update();
   try {
     // 只点击原网页的“加载更多”，不调用未公开接口，不发并发请求。
     let batches = 0;
     for (; batches < 500 && !cancelLoad; batches++) {
+      if (batches) {
+        for (let remaining = readInterval; remaining > 0 && !cancelLoad; remaining -= 600) await new Promise(resolve => setTimeout(resolve, Math.min(600, remaining)));
+        if (cancelLoad) break;
+      }
+      const before = await snapshot(sourceId);
+      if (before.pageUrl !== page.pageUrl) throw new Error('来源网页已切换，请重新读取当前页');
+      if (before.siteError) throw new Error(before.siteError);
+      applyPage(before);
       const state = booklistReadingState(page);
       if (state.complete || (state.expected !== null && state.loaded > state.expected)) break;
       const count = page.books.length;
@@ -114,6 +126,7 @@ async function loadAll() {
         await new Promise(resolve => setTimeout(resolve, 600));
         const next = await snapshot(sourceId);
         if (next.pageUrl !== page.pageUrl) throw new Error('来源网页已切换，请重新读取当前页');
+        if (next.siteError) throw new Error(next.siteError);
         if (next.books.length > count) { applyPage(next); grew = true; status(`正在自动读取：${page.books.length}${booklistReadingState(page).expected !== null ? ` / ${booklistReadingState(page).expected}` : ''} 本…`); break; }
       }
       if (!grew && !cancelLoad) {
@@ -130,7 +143,7 @@ async function loadAll() {
     else if (cancelLoad) status(`已停止读取，保留 ${state.loaded} 本；尚未确认读全。`);
     else if (state.expected === null) status(`已读取 ${state.loaded} 本，但未识别页面总数，无法确认读全。`, true);
     else if (state.loaded > state.expected) status(`数量不一致：读取 ${state.loaded} 本，页面标注 ${state.expected} 本，请检查原书单。`, true);
-    else status(`尚未读全：${state.loaded} / ${state.expected} 本，尚缺 ${state.expected - state.loaded} 本。${batches >= 500 ? '达到本次 500 批读取上限' : '未找到可点击的“显示更多”'}；可检查原网页后点击“继续读取”。`, true);
+    else status(`尚未读全：${state.loaded} / ${state.expected} 本，尚缺 ${state.expected - state.loaded} 本。${batches >= 500 ? '达到本次 500 批读取上限' : '未找到可点击的“显示更多”'}；可检查原网页后点击“自动读全”。`, true);
   } catch (error) { status(error.message, true); }
   finally { loadingAll = false; renderBooks(); update(); }
 }
@@ -193,6 +206,9 @@ async function exportExcel(books) {
 }
 element('read').addEventListener('click', () => readCurrent());
 element('load-all').addEventListener('click', loadAll);
+element('read-interval').addEventListener('change', async () => {
+  if (element('read-interval').reportValidity()) await chrome.storage.local.set({readIntervalSeconds:Number(element('read-interval').value)});
+});
 element('search').addEventListener('input', renderBooks);
 element('all').addEventListener('change', () => { chosen = new Set(element('all').checked ? page.books.map(book => book.id) : []); renderBooks(); update(); });
 element('books').addEventListener('change', event => { const id = event.target.dataset.id; if (!id) return; if (event.target.checked) chosen.add(id); else chosen.delete(id); update(); });
@@ -261,7 +277,8 @@ window.addEventListener('beforeunload', event => { if (busy()) { event.preventDe
 window.addEventListener('pagehide', () => { cancelLoad = true; queue?.stop(); });
 async function initialize() {
   const currentWindow = await chrome.windows.getCurrent(); windowId = currentWindow.id;
-  const preferences = await chrome.storage.local.get(['intervalSeconds','concurrency']);
+  const preferences = await chrome.storage.local.get(['intervalSeconds','concurrency','readIntervalSeconds']);
+  element('read-interval').value = Number.isFinite(preferences.readIntervalSeconds) && preferences.readIntervalSeconds >= 1 && preferences.readIntervalSeconds <= 3600 ? preferences.readIntervalSeconds : 3;
   const interval = preferences.intervalSeconds;
   element('interval').value = Number.isFinite(interval) && interval >= 0 && Number.isFinite(interval * 1000) ? interval : 60;
   element('concurrency').value = Number.isInteger(preferences.concurrency) && preferences.concurrency >= 1 && preferences.concurrency <= 10 ? preferences.concurrency : 1;

@@ -17,15 +17,16 @@ async function tests(){
   for(const match of html.matchAll(/<(\w+)[^>]*id="([^"]+)"[^>]*>/g)){const e=new Element(match[1]);elements[match[2]]=e;e.hidden=match[0].includes(' hidden');e.disabled=match[0].includes(' disabled');e.min=match[0].match(/min="([^"]+)"/)?.[1];e.max=match[0].match(/max="([^"]+)"/)?.[1];}
   const root=fakeDirectory('我的书库'); let grants=true,contained=true,permissionCalls=[],downloads=[],folderPrompts=0,storageListener,localPreferences={},loadMoreClicks=0,moreAvailable=true,stalled=false;
   let source={pageUrl:'https://z-library.website/booklist/1',name:'测试书单',total:'3',books:[{title:'局外人（译文经典）',author:'加缪 (Albert Camus)',download:'/dl/1',extension:'pdf'},{title:'英文书',author:'English Author',download:'/dl/2',extension:'pdf'}]};
+  let readWait=0,errorOnClick=false;const clickWaits=[];
   const context=vm.createContext({console,URL,Blob,TextDecoder,Uint8Array,AbortController,crypto,Date,Promise,JSZip:require('../browser_extension/vendor/jszip.min.js'),
-    setTimeout:(fn,ms)=>setTimeout(fn,ms===600?0:ms),clearTimeout,setInterval,clearInterval,
+    setTimeout:(fn,ms)=>{if(ms===600)readWait+=ms;return setTimeout(fn,ms===600?0:ms);},clearTimeout,setInterval,clearInterval,
     document:{getElementById:id=>elements[id],createElement:tag=>new Element(tag)},
     window:{showDirectoryPicker:async()=>{folderPrompts++;return root;},addEventListener(){}},
     chrome:{windows:{getCurrent:async()=>({id:3})},tabs:{query:async()=>[{id:7}]},
       scripting:{executeScript:async({func})=>{if(func.name==='clickLoadMore'){
         const expected=Number(source.total);if(!moreAvailable||source.books.length>=expected)return[{result:false}];loadMoreClicks++;
         if(!stalled){const end=Math.min(source.books.length+20,expected);for(let i=source.books.length;i<end;i++)source.books.push({title:`新书${i}`,author:'作者三',download:`/dl/${i}`,extension:'pdf'});}
-        return[{result:true}];
+        clickWaits.push(readWait);if(errorOnClick)source.siteError='来源网页显示错误或限制提示，请在原网页处理后重试。';return[{result:true}];
       }return[{result:structuredClone(source)}];}},
       storage:{local:{get:async()=>localPreferences,set:async data=>Object.assign(localPreferences,data)},session:{get:async()=>({'source-3':{tabId:7}})},onChanged:{addListener:fn=>storageListener=fn}},
       permissions:{request:async options=>{permissionCalls.push(options);return grants;},contains:async()=>contained},
@@ -35,7 +36,7 @@ async function tests(){
   for(const name of ['core','clean','excel','directory','popup'])vm.runInContext(fs.readFileSync(require.resolve(`../browser_extension/${name}.js`),'utf8'),context,{filename:`${name}.js`});
   const settle=async()=>{for(let i=0;i<100;i++){await new Promise(resolve=>setTimeout(resolve,1));if(elements['booklist-name'].textContent==='测试书单'&&!elements.read.disabled)return;}throw new Error('初始化未完成');};
   await settle();
-  assert.equal(elements.selection.textContent,'3 / 3 本已选','打开侧栏后应自动加载到书单标注的总数');assert(elements.start.disabled);assert.equal(elements['load-all'].hidden,true);
+  assert.equal(elements.selection.textContent,'2 / 2 本已选','打开侧栏只能读取已显示书籍');assert.equal(loadMoreClicks,0,'打开扩展不能自动点击网页');assert(elements.start.disabled);assert.equal(elements['load-all'].hidden,false);
   for(const seconds of [0,0.25,7200]) {elements.interval.value=String(seconds);await elements.interval.emit('change');assert.equal(localPreferences.intervalSeconds,seconds);}
   await elements['load-all'].emit('click');assert.equal(elements.selection.textContent,'3 / 3 本已选');assert.equal(elements['load-all'].hidden,true);assert.equal(elements.books.children.length,3);
   elements.search.value='English';await elements.search.emit('input');assert.equal(elements.books.children.length,1);
@@ -84,11 +85,12 @@ async function tests(){
   assert.equal(elements['booklist-name'].textContent,'另一书单');assert.equal(elements.target.textContent,'我的书库 / 另一书单');assert.equal(elements.rights.checked,false);assert.equal(elements.selection.textContent,'1 / 1 本已选');
   const bookBatch=count=>Array.from({length:count},(_,i)=>({title:`书${i}`,author:'作者',download:`/dl/${i}`,extension:'pdf'}));
   source={...source,pageUrl:'https://z-library.website/booklist/127',name:'127本书单',books:bookBatch(20),total:'127'};
-  const clicksBefore=loadMoreClicks;await elements.read.emit('click');
+  const clicksBefore=loadMoreClicks;await elements.read.emit('click');assert.equal(loadMoreClicks,clicksBefore);await elements['load-all'].emit('click');
   assert.equal(loadMoreClicks-clicksBefore,6,'自动连续展开20→40→60→80→100→120→127');
+  for(let i=clickWaits.length-5;i<clickWaits.length;i++)assert(clickWaits[i]-clickWaits[i-1]>=3000,'自动展开之间应遵守独立间隔');
   assert.equal(elements.selection.textContent,'127 / 127 本已选');assert(elements.status.textContent.includes('读取成功'));assert(elements['source-note'].textContent.includes('127 / 127'));assert.equal(elements['load-all'].hidden,true);
   moreAvailable=false;source={...source,pageUrl:'https://z-library.website/booklist/incomplete',books:bookBatch(20)};
-  await elements.read.emit('click');assert(elements.status.textContent.includes('尚缺 107 本'));assert(!elements.status.textContent.includes('读取成功'));assert(elements.status.classes.has('error'));assert.equal(elements['load-all'].hidden,false);
+  await elements.read.emit('click');await elements['load-all'].emit('click');assert(elements.status.textContent.includes('尚缺 107 本'));assert(!elements.status.textContent.includes('读取成功'));assert(elements.status.classes.has('error'));assert.equal(elements['load-all'].hidden,false);
   moreAvailable=true;stalled=true;await elements['load-all'].emit('click');assert(elements.status.textContent.includes('超时'));assert(!elements.status.textContent.includes('读取成功'));
   stalled=false;await elements['load-all'].emit('click');assert(elements.status.textContent.includes('读取成功'),'可以从保留的书目继续读全');
   moreAvailable=false;source={...source,pageUrl:'https://z-library.website/booklist/unknown',books:bookBatch(20),total:''};
@@ -96,6 +98,14 @@ async function tests(){
   source={...source,pageUrl:'https://z-library.website/booklist/mismatch',books:bookBatch(21),total:'20'};
   await elements.read.emit('click');assert(elements.status.textContent.includes('数量不一致'));assert(!elements.status.textContent.includes('读取成功'));
   localPreferences.intervalSeconds=0;await vm.runInContext('initialize()',context);assert.equal(elements.interval.value,0,'重开侧栏不能把保存的0秒重置为默认60秒');
+  source={...source,pageUrl:'https://zh.1lib.sk/',books:bookBatch(20),total:'127'};
+  const beforeHome=loadMoreClicks;await elements.read.emit('click');assert(elements.status.textContent.includes('书单页'));assert.equal(loadMoreClicks,beforeHome);assert(elements.start.disabled);
+  source={...source,pageUrl:'https://zh.1lib.sk/booklist/1',siteError:'来源网页显示错误或限制提示，请在原网页处理后重试。'};
+  await elements.read.emit('click');assert(elements.status.textContent.includes('来源网页'));assert.equal(loadMoreClicks,beforeHome);
+  delete source.siteError;
+  moreAvailable=true;errorOnClick=true;source={...source,books:bookBatch(20)};await elements.read.emit('click');
+  const beforeError=loadMoreClicks;await elements['load-all'].emit('click');assert.equal(loadMoreClicks,beforeError+1);assert(elements.status.textContent.includes('来源网页'));assert.equal(elements['load-all'].disabled,false);
+  errorOnClick=false;delete source.siteError;
   for(const host of ['zh.z-library.website','z-library.website','other.example','z-library.website.other.example','evil-z-library.website']) {
     source={...source,pageUrl:`https://${host}/booklist/permissions`,books:bookBatch(1),total:'1'};
     await elements.read.emit('click');

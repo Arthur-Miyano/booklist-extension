@@ -33,7 +33,18 @@ async function writeBookToDirectory(root, item, signal, onProgress = () => {}) {
   let response;
   try { response = await fetch(item.url, {credentials: 'include', signal}); }
   catch (error) { error.stage = 'network'; throw error; }
-  if (!response.ok) throw Object.assign(new Error(`网站返回 HTTP ${response.status}，请检查登录状态或下载限额后重试`), {stage: 'response', httpStatus: response.status});
+  if (!response.ok) {
+    const retryAfter = response.headers.get('retry-after');
+    const retryAt = /^\d+$/.test(retryAfter || '') ? Date.now() + Number(retryAfter) * 1000 : Date.parse(retryAfter || '');
+    const wait = Number.isFinite(retryAt) ? Math.max(0, Math.ceil((retryAt - Date.now()) / 1000)) : 0;
+    const reason = response.status === 429 ? `请求过于频繁，已停止新增下载${wait ? `；服务器要求至少等待 ${wait} 秒后再试` : '；请稍后重试'}`
+      : response.status === 504 ? '网关等待上游服务器超时，不能据此判断账号或下载额度；请稍后检查原网页'
+      : response.status === 401 ? '登录验证失败，请在原网页确认登录'
+      : response.status === 403 ? '服务器拒绝访问，请在原网页检查访问权限或验证提示'
+      : response.status >= 500 ? '网站服务暂时出错，请稍后检查原网页'
+      : '下载请求未成功，请在原网页查看具体提示';
+    throw Object.assign(new Error(`网站返回 HTTP ${response.status}：${reason}`), {stage: 'response', httpStatus: response.status, retryAt: response.status === 429 && Number.isFinite(retryAt) ? retryAt : 0});
+  }
   if (/html|json/i.test(response.headers.get('content-type') || '') || !response.body) throw Object.assign(new Error('网站返回网页或空响应，没有保存为书籍'), {stage: 'response'});
   // 压缩传输的 Content-Length 不是解压后的文件大小，不能用于跳过或完整性校验。
   const encoding = response.headers.get('content-encoding');
@@ -112,7 +123,7 @@ class DirectoryQueue {
     this.directory = directory; this.changed = changed;
     this.pending = []; this.results = []; this.diagnostics = []; this.intervalSeconds = 60;
     this.concurrency = 1; this.active = new Set(); this.lastStartedAt = null;
-    this.running = false; this.paused = false; this.stopped = false; this.nextAt = 0;
+    this.running = false; this.paused = false; this.stopped = false; this.nextAt = 0; this.retryNotBefore = 0;
   }
   get speed() { return Array.from(this.active).reduce((sum, task) => sum + (task.phase === 'receiving' ? task.speed : 0), 0); }
   setInterval(seconds) {
@@ -126,6 +137,7 @@ class DirectoryQueue {
     if (this.items?.length) this.changed(this);
   }
   start(items) {
+    this.checkRetryWait();
     if (this.running || this.pending.length || this.active.size) throw new Error('请先完成或停止当前任务');
     this.pending = [...items]; this.items = [...items]; this.results = []; this.diagnostics = [];
     this.paused = false; this.stopped = false; this.nextAt = 0; this.lastStartedAt = null; this.error = '';
@@ -141,7 +153,11 @@ class DirectoryQueue {
     for (const task of this.active) { task.cancelled = true; task.controller.abort(); }
     this.changed(this);
   }
-  resume() { this.paused = false; this.error = ''; return this.run(); }
+  checkRetryWait() {
+    const seconds = Math.ceil((this.retryNotBefore - Date.now()) / 1000);
+    if (seconds > 0) throw new Error(`服务器要求等待，还需 ${seconds} 秒后才能重试。`);
+  }
+  resume() { this.checkRetryWait(); this.paused = false; this.error = ''; return this.run(); }
   async waitForNext() {
     while (!this.stopped && !this.paused && Date.now() < this.nextAt) {
       this.changed(this); await new Promise(resolve => setTimeout(resolve, Math.min(1000, this.nextAt - Date.now())));
@@ -188,6 +204,7 @@ class DirectoryQueue {
         this.pending.push(task.item);
         this.pending.sort((a,b) => this.items.indexOf(a) - this.items.indexOf(b));
         if (!task.cancelled || timedOut) {
+          if (error.retryAt) this.retryNotBefore = Math.max(this.retryNotBefore, error.retryAt);
           this.paused = true;
           const message = String(error.message).replace(/https?:\/\/[^\s"'<>]+/g, url => { try { return new URL(url).origin; } catch { return '[地址已省略]'; } }).slice(0, 400);
           this.diagnostics.push({time: new Date().toISOString(), title: task.title, stage: error.stage || 'unknown', host: new URL(task.url).hostname, message, httpStatus: error.httpStatus || null});

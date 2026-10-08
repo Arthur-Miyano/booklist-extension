@@ -51,6 +51,13 @@ async function tests() {
     global.fetch = async()=>new Response('limited',{status:429}); await queue.start([item,item]);
     assert(queue.paused); assert.equal(queue.pending.length,2); assert.equal(queue.diagnostics[0].httpStatus,429);
     global.fetch = async()=>response(false); await queue.resume(); assert.equal(queue.results.length,2);
+    global.fetch = async()=>new Response('limited',{status:429,headers:{'Retry-After':'10'}});await queue.start([item]);
+    assert(queue.error.includes('至少等待 10 秒'));assert.throws(()=>queue.resume(),/还需 10 秒/);assert(queue.paused);
+    now+=10000;global.fetch=async()=>response(false);await queue.resume();assert.equal(queue.results.length,1);
+    for(const [code,message] of [[504,'上游服务器超时'],[503,'网站服务'],[401,'登录验证'],[403,'拒绝访问']]) {
+      global.fetch=async()=>new Response('error',{status:code});await assert.rejects(writeBookToDirectory(root,item,signal),error=>error.httpStatus===code&&error.message.includes(message)&&!error.message.includes('下载限额'));
+    }
+    global.fetch=async()=>response(false);
     let paused = false;
     const pauseQueue = new DirectoryQueue(root,q=>{if(q.active.size&&!paused){paused=true;q.pause();}});
     pauseQueue.waitForNext = async function(){now=Math.max(now,this.nextAt);};

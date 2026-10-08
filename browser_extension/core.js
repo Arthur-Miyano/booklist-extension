@@ -1,4 +1,7 @@
 function readBookPage() {
+  const siteError = Array.from(document.querySelectorAll('[role="alert"], .alert-danger, .notification-error, .toast-error')).some(node =>
+    (!node.getClientRects || node.getClientRects().length) && /发生了错误|请求过于频繁|下载.{0,8}(?:限额|上限)|too many requests|an error (?:has )?occurred|access denied|download limit/i.test(node.textContent || ''))
+    ? '来源网页显示错误或限制提示，请在原网页处理后重试。' : '';
   const cards = Array.from(document.querySelectorAll('z-bookcard'));
   // 此函数由 executeScript 独立注入，解析总数的代码必须位于函数内。
   function count(text) {
@@ -17,6 +20,7 @@ function readBookPage() {
   if (!total) total = count(document.querySelector('.books_count')?.textContent);
   return {
     pageUrl: location.href,
+    siteError,
     name: document.title.split(' — ')[0].trim() || '书单',
     total,
     books: cards.map(card => ({
