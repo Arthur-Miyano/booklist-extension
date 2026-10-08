@@ -55,11 +55,12 @@ async function tests(){
   failing=false;await elements.resume.emit('click');assert.equal(elements['task-count'].textContent,'3 / 3 本');assert.equal(elements['batch-progress'].value,100);assert.equal(elements['diagnostic-box'].hidden,false,'失败记录可回看');
   const folder=root.directories.get('测试书单');assert(folder.files.has('局外人 - 加缪 (Albert Camus).pdf'));assert(folder.files.has('英文书 - English Author.pdf'));assert.equal(folderPrompts,1);
   assert.equal(JSON.stringify(permissionCalls.at(-1)),JSON.stringify({origins:['https://z-library.website/*','https://dln1.ncdn.ec/*']}));
-  const count=folder.files.size;await elements.start.emit('click');assert.equal(folder.files.size,count+1,'再次下载只新增Excel，不重复保存同大小书籍');assert(elements['batch-note'].textContent.includes('已跳过 3 本'));
+  const count=folder.files.size;context.fetch=async()=>{throw new Error('恢复完整记录时不能发请求');};await elements.start.emit('click');assert.equal(folder.files.size,count+1,'再次下载只新增Excel，不重复保存同大小书籍');assert(elements['batch-note'].textContent.includes('已跳过 3 本'));assert(elements['batch-note'].textContent.includes('记录恢复 3 本，未请求'));
   elements.all.checked=false;await elements.all.emit('change');assert(elements.start.disabled);assert(elements.export.disabled);
   elements.all.checked=true;await elements.all.emit('change');
   elements.concurrency.value='10';await elements.concurrency.emit('change');assert.equal(localPreferences.concurrency,10);
   const controls=[];
+  folder.files.delete('.booklist-progress.json');
   context.fetch=async(url,{signal})=>{
     let controller,closed=false;
     const stream=new ReadableStream({start(c){controller=c;c.enqueue(Buffer.from('%PDF-1.7\n'+'x'.repeat(600)));}});

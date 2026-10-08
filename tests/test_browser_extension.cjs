@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const {prepareBrowserDownload,safeBrowserName,readBookPage,clickLoadMore,booklistReadingState} = require('../browser_extension/core.js');
 const manifest = require('../browser_extension/manifest.json');
-assert.equal(manifest.version,'2.3.1');
+assert.equal(manifest.version,'2.4.0');
 assert.equal(manifest.name,'z站书单便捷下载');
 assert.deepEqual(manifest.permissions,['activeTab','scripting','downloads','storage','sidePanel']);
 assert(!manifest.action.default_popup); assert.equal(manifest.side_panel.default_path,'popup.html');

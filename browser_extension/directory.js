@@ -118,6 +118,51 @@ async function writeBookToDirectory(root, item, signal, onProgress = () => {}) {
   }
 }
 
+const progressFileName = '.booklist-progress.json';
+async function readProgress(root, folder) {
+  try {
+    const directory = await root.getDirectoryHandle(folder);
+    const handle = await directory.getFileHandle(progressFileName);
+    const file = await handle.getFile();
+    if (file.size > 5000000) throw fileError('下载记录过大，请检查书单目录中的 .booklist-progress.json');
+    const record = JSON.parse(await file.text());
+    if (record.version !== 1 || !Array.isArray(record.books) || !record.books.every(entry => entry && typeof entry === 'object' && typeof entry.requestedFilename === 'string')) throw new Error('invalid');
+    return record.books;
+  } catch (error) {
+    if (error.name === 'NotFoundError') return [];
+    throw fileError('无法读取下载记录，请检查书单目录中的 .booklist-progress.json；未继续请求书籍。');
+  }
+}
+async function recordedDownload(root, item, cache) {
+  const [folder] = item.filename.split('/');
+  if (!cache.has(folder)) cache.set(folder, await readProgress(root, folder));
+  const record = cache.get(folder).find(entry => entry.requestedFilename === item.filename && (entry.bookKey || '') === (item.bookKey || '') && entry.title === item.title && entry.author === (item.author || '') && entry.extension === (item.extension || ''));
+  if (!record || !Number.isSafeInteger(record.size) || record.size <= 0 || typeof record.filename !== 'string') return null;
+  const parts = record.filename.split('/');
+  if (parts.length !== 2 || parts[0] !== folder || !parts[1] || /[\\<>:"|?*\x00-\x1f]/.test(parts[1]) || ['.','..'].includes(parts[1])) return null;
+  try {
+    const directory = await root.getDirectoryHandle(folder);
+    const file = await (await directory.getFileHandle(parts[1])).getFile();
+    if (file.size !== record.size || (record.lastModified && file.lastModified !== record.lastModified)) return null;
+    return {filename:record.filename, size:record.size, skipped:true, recorded:true};
+  } catch (error) { if (error.name === 'NotFoundError') return null; throw fileError('无法校验已记录的书籍，请检查目录访问权限。'); }
+}
+async function saveProgress(root, item, result) {
+  // ponytail: 每本完成后重写一份原子快照；超大书单可改为分段记录，避免累计写入量过大。
+  return commitToDirectory(root, async () => {
+    const [folder, base] = result.filename.split('/');
+    const directory = await root.getDirectoryHandle(folder);
+    const file = await (await directory.getFileHandle(base)).getFile();
+    if (file.size !== result.size) throw fileError('书籍已保存，但大小改变，未记录为已完成。');
+    const books = (await readProgress(root, folder)).filter(entry => entry.requestedFilename !== item.filename || (entry.bookKey || '') !== (item.bookKey || ''));
+    books.push({requestedFilename:item.filename, filename:result.filename, size:result.size, lastModified:file.lastModified || null, bookKey:item.bookKey || '', title:item.title, author:item.author || '', extension:item.extension || ''});
+    const handle = await directory.getFileHandle(progressFileName, {create:true});
+    const writable = await handle.createWritable();
+    try { await writable.write(JSON.stringify({version:1, books})); await writable.close(); }
+    catch (error) { await writable.abort().catch(() => {}); throw fileError('书籍已保存，但下载记录写入失败；请检查目录权限或空间。'); }
+  });
+}
+
 class DirectoryQueue {
   constructor(directory, changed) {
     this.directory = directory; this.changed = changed;
@@ -167,6 +212,17 @@ class DirectoryQueue {
     if (this.running) return;
     this.running = true; this.changed(this);
     try {
+      const cache = new Map();
+      for (const item of [...this.pending]) {
+        if (this.stopped || this.paused) break;
+        const recorded = await recordedDownload(this.directory, item, cache);
+        if (this.stopped || this.paused) break;
+        if (recorded) {
+          this.pending.splice(this.pending.indexOf(item), 1);
+          this.results.push({...recorded, id:item.id, title:item.title});
+          this.changed(this);
+        }
+      }
       while ((this.pending.length || this.active.size) && !this.stopped && !this.paused) {
         if (this.pending.length && this.active.size < this.concurrency) {
           await this.waitForNext();
@@ -180,6 +236,11 @@ class DirectoryQueue {
           task.promise = this.download(task);
         } else await Promise.race(Array.from(this.active, task => task.promise));
       }
+    } catch (error) {
+      this.paused = true; this.error = `恢复下载失败：${error.message}`;
+      const item = this.pending[0];
+      if (item) this.diagnostics.push({time:new Date().toISOString(), title:item.title, stage:'file', host:new URL(item.url).hostname, message:error.message, httpStatus:null});
+      this.changed(this);
     } finally {
       // 出错时停止新增请求，其他已开始的任务可完成；手动暂停/停止则中止全部在途任务。
       await Promise.allSettled(Array.from(this.active, task => task.promise));
@@ -187,7 +248,7 @@ class DirectoryQueue {
     }
   }
   async download(task) {
-    let sampledAt = Date.now(), sampledBytes = 0, timedOut = false, idleTimer;
+    let sampledAt = Date.now(), sampledBytes = 0, timedOut = false, idleTimer, completed = false;
     const resetTimeout = () => { clearTimeout(idleTimer); idleTimer = setTimeout(() => { timedOut = true; task.controller.abort(); }, 120000); };
     resetTimeout();
     const ticker = setInterval(() => { if (Date.now() - sampledAt > 2000) task.speed = 0; this.changed(this); }, 1000);
@@ -199,10 +260,12 @@ class DirectoryQueue {
         task.bytes = bytes; task.total = total; task.phase = phase; this.changed(this);
       });
       this.results.push({...result, id: task.id, title: task.title});
+      completed = true; clearTimeout(idleTimer);
+      try { await saveProgress(this.directory, task, result); }
+      catch (error) { throw fileError(`书籍已保存，但完成记录未更新：${error.message}`); }
     } catch (error) {
       if (!this.stopped) {
-        this.pending.push(task.item);
-        this.pending.sort((a,b) => this.items.indexOf(a) - this.items.indexOf(b));
+        if (!completed) { this.pending.push(task.item); this.pending.sort((a,b) => this.items.indexOf(a) - this.items.indexOf(b)); }
         if (!task.cancelled || timedOut) {
           if (error.retryAt) this.retryNotBefore = Math.max(this.retryNotBefore, error.retryAt);
           this.paused = true;

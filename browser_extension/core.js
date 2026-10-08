@@ -24,6 +24,7 @@ function readBookPage() {
     name: document.title.split(' — ')[0].trim() || '书单',
     total,
     books: cards.map(card => ({
+      bookKey: (card.getAttribute('id') || '').match(/^\d+$/)?.[0] || (card.querySelector('[href*="/book/"]')?.getAttribute?.('href') || '').match(/\/book\/(\d+)/)?.[1] || '',
       title: card.querySelector('[slot="title"]')?.textContent.trim() || '',
       author: card.querySelector('[slot="author"]')?.textContent.trim() || '',
       download: card.getAttribute('download') || '',
@@ -54,6 +55,7 @@ function prepareBrowserDownload(book, pageUrl, name) {
     author: book.author,
     extension,
     id: book.id,
+    bookKey: book.bookKey || '',
   };
 }
 

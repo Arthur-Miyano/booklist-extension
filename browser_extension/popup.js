@@ -159,11 +159,12 @@ function showQueue(current) {
   const processed = current.results.length, total = current.items?.length || 0;
   const saved = current.results.filter(result => !result.skipped).length;
   const skipped = processed - saved;
+  const restored = current.results.filter(result => result.recorded).length;
   const revealTransfer = element('transfer').hidden;
   element('transfer').hidden = false;
   element('task-count').textContent = `${processed} / ${total} 本`;
   element('batch-progress').value = total ? processed / total * 100 : 0;
-  element('batch-note').textContent = `已保存 ${saved} 本 · 已跳过 ${skipped} 本 · 剩余 ${current.pending.length + tasks.length} 本`;
+  element('batch-note').textContent = `已保存 ${saved} 本 · 已跳过 ${skipped} 本${restored ? `（记录恢复 ${restored} 本，未请求）` : ''} · 剩余 ${current.pending.length + tasks.length} 本`;
   const wait = Math.max(0, Math.ceil((current.nextAt - now) / 1000));
   const scheduling = current.stopped ? '已停止新增下载' : current.paused ? '已暂停新增下载' : tasks.length >= current.concurrency ? '等待空余名额' : current.pending.length ? `${wait} 秒后启动下一本` : '等待在途下载完成';
   element('current-title').textContent = tasks.length ? `正在下载 ${tasks.length} 本 / 上限 ${current.concurrency} 本` : current.paused ? '任务已暂停' : current.stopped ? '任务已停止' : current.pending.length ? scheduling : '下载完成';

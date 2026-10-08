@@ -36,7 +36,8 @@ async function tests(){
     controls[4].finish();await until(()=>controls.length===11);assert.equal(q.results[0].id,'4','按真实完成顺序计数');assert.equal(controls[10].time,300000);
     controls[1].finish();await until(()=>controls.length===12);assert.equal(controls[11].time,330000);assert(peak<=10);
     controls.forEach(control=>control.finish());await running;
-    assert.equal(q.results.length,12,JSON.stringify(q.diagnostics));assert.equal(q.active.size,0);assert.equal(q.pending.length,0);assert.equal(q.directory.directories.get('书单').files.size,12,'所有不同书名文件均应保存');
+    assert.equal(q.results.length,12,JSON.stringify(q.diagnostics));assert.equal(q.active.size,0);assert.equal(q.pending.length,0);assert.equal(q.directory.directories.get('书单').files.size,13,'12本书籍与一份恢复记录均应保存');
+    assert.equal(JSON.parse(Buffer.from(q.directory.directories.get('书单').files.get('.booklist-progress.json')).toString()).books.length,12,'并行完成不能相互覆盖进度记录');
 
     const pauseControls=controlledNetwork(), paused=queue(3);
     const pausing=paused.start(items(6));await until(()=>pauseControls.length===3);
