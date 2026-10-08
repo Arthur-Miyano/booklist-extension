@@ -193,6 +193,7 @@ function showQueue(current) {
 async function authorizeDownload() {
   const source = new URL(page.pageUrl); const origins = [`${source.origin}/*`];
   if (source.hostname === 'z-library.website' || source.hostname.endsWith('.z-library.website')) origins.push('https://dln1.ncdn.ec/*');
+  if (source.hostname === '1lib.sk' || source.hostname.endsWith('.1lib.sk')) origins.push('https://dl-alps-2.gcdn.ac/*');
   if (!await chrome.permissions.request({origins}) || !await chrome.permissions.contains({origins})) throw new Error('网站授权未生效，请允许书单来源与文件服务器的访问权限后重试。');
 }
 async function exportExcel(books) {

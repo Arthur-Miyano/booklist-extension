@@ -106,12 +106,13 @@ async function tests(){
   moreAvailable=true;errorOnClick=true;source={...source,books:bookBatch(20)};await elements.read.emit('click');
   const beforeError=loadMoreClicks;await elements['load-all'].emit('click');assert.equal(loadMoreClicks,beforeError+1);assert(elements.status.textContent.includes('来源网页'));assert.equal(elements['load-all'].disabled,false);
   errorOnClick=false;delete source.siteError;
-  for(const host of ['zh.z-library.website','z-library.website','other.example','z-library.website.other.example','evil-z-library.website']) {
+  for(const host of ['1lib.sk','zh.1lib.sk','1lib.sk.other.example','evil-1lib.sk','zh.z-library.website','z-library.website','other.example','z-library.website.other.example','evil-z-library.website']) {
     source={...source,pageUrl:`https://${host}/booklist/permissions`,books:bookBatch(1),total:'1'};
     await elements.read.emit('click');
     await vm.runInContext('authorizeDownload()',context);
     const origins=[`https://${host}/*`];
     if(host==='zh.z-library.website'||host==='z-library.website')origins.push('https://dln1.ncdn.ec/*');
+    if(host==='1lib.sk'||host==='zh.1lib.sk')origins.push('https://dl-alps-2.gcdn.ac/*');
     assert.equal(JSON.stringify(permissionCalls.at(-1)),JSON.stringify({origins}),`${host} 的授权应包含实际来源，且只有站点及其子域名请求已知文件服务器`);
   }
   console.log('完整侧栏流程与自动读取、自由间隔及0秒恢复检查通过');
