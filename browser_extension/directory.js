@@ -1,4 +1,29 @@
 function fileError(message) { return Object.assign(new Error(message), {stage: 'file'}); }
+const formatFilename = typeof module !== 'undefined' ? require('./core.js').safeBrowserFilename : safeBrowserFilename;
+function validBookPrefix(prefix, extension) {
+  let text = new TextDecoder().decode(prefix).trimStart();
+  if (prefix[0] === 255 && prefix[1] === 254) text = new TextDecoder('utf-16le').decode(prefix).trimStart();
+  if (prefix[0] === 254 && prefix[1] === 255) text = new TextDecoder('utf-16be').decode(prefix).trimStart();
+  if (/^(?:<\?xml[^>]*>\s*)?<(?:!doctype\s+html|html\b|head\b|body\b|script\b)/i.test(text)
+      || /^(?:error\s*:\s*)?(?:download(?:s)? (?:limit|quota).{0,40}(?:reached|exceeded)|too many requests\b|access denied\b|please (?:log ?in|sign in)\b|发生了错误|下载.{0,8}(?:限额|上限))/i.test(text)
+      || /^[\[{]/.test(text) && /"errors?"\s*:|"success"\s*:\s*false|"status"\s*:\s*"error"|"(?:code|status)"\s*:\s*[45]\d\d\b/i.test(text)) return false;
+  const ascii = (start, length) => String.fromCharCode(...prefix.subarray(start, start + length));
+  if (extension === 'pdf') return ascii(0,5) === '%PDF-';
+  if (extension === 'epub') {
+    if (prefix.length < 58 || ascii(0,4) !== 'PK\x03\x04') return false;
+    const view = new DataView(prefix.buffer,prefix.byteOffset,prefix.byteLength);
+    const nameLength = view.getUint16(26,true), extraLength = view.getUint16(28,true);
+    return view.getUint16(8,true) === 0 && nameLength === 8 && ascii(30,8) === 'mimetype' && ascii(30+nameLength+extraLength,20) === 'application/epub+zip';
+  }
+  if (extension === 'mobi' || extension === 'azw3') return prefix.length >= 78 && ascii(60,8) === 'BOOKMOBI';
+  if (extension === 'djvu') return ascii(0,8) === 'AT&TFORM' && ['DJVU','DJVM'].includes(ascii(12,4));
+  if (extension === 'fb2') return /^(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*<(?:[\w.-]+:)?FictionBook\b/i.test(text);
+  if (extension === 'txt') return text.length > 0 && !text.includes('\x00');
+  return false;
+}
+async function validLocalBook(file, name) {
+  return validBookPrefix(new Uint8Array(await file.slice(0,512).arrayBuffer()), name.split('.').pop().toLowerCase());
+}
 // 同一个下载队列并行接收，但最终检查与提交串行，避免同名任务相互覆盖。
 // ponytail: 锁按目录句柄对象划分；不同侧栏同时操作同一物理目录时仍需用户协调。
 const directoryCommits = new WeakMap();
@@ -21,7 +46,10 @@ async function existingCopies(directory, base) {
     const suffix = folded.startsWith(`${foldedStem} (`) && folded.endsWith(`)${foldedExtension}`)
       ? name.slice(stem.length + 2, -extension.length - 1) : '';
     // 同名目录也占用名称，不能误删或覆盖；Windows 文件名比较忽略大小写。
-    if (folded === base.toLowerCase() || /^\d+$/.test(suffix)) copies.push({name, size: handle.kind === 'file' ? (await handle.getFile()).size : null});
+    if (folded === base.toLowerCase() || /^\d+$/.test(suffix)) {
+      const file = handle.kind === 'file' ? await handle.getFile() : null;
+      copies.push({name, size: file && await validLocalBook(file,name) ? file.size : null});
+    }
   }
   return copies;
 }
@@ -61,8 +89,7 @@ async function writeBookToDirectory(root, item, signal, onProgress = () => {}) {
     if (!bytes) throw new Error('网站返回空文件');
     const prefix = new Uint8Array(Math.min(bytes, 512)); let offset = 0;
     for (const chunk of chunks) { const part = chunk.subarray(0, prefix.length - offset); prefix.set(part, offset); offset += part.length; if (offset === prefix.length) break; }
-    const text = new TextDecoder().decode(prefix).trimStart();
-    if (/^(?:<!doctype\s+html|<html\b|<head\b|<body\b)/i.test(text) || (base.endsWith('.pdf') && !text.startsWith('%PDF-'))) throw new Error('响应内容不是有效书籍，可能是登录页或错误页');
+    if (!validBookPrefix(prefix, base.split('.').pop().toLowerCase())) throw new Error('响应内容不符合书籍格式，可能是登录页、错误文本或错误 JSON；未保存为书籍');
     if (total && (bytes > total || (ended && bytes !== total))) throw new Error('收到的文件大小与服务器声明不一致');
     signal.throwIfAborted(); stage = 'file';
     directory = await root.getDirectoryHandle(folder, {create: true});
@@ -95,7 +122,7 @@ async function writeBookToDirectory(root, item, signal, onProgress = () => {}) {
       if (match) return {filename: `${folder}/${match.name}`, size: bytes, skipped: true};
       const names = new Set(copies.map(copy => copy.name.toLowerCase()));
       let candidate = base;
-      for (let number = 1; names.has(candidate.toLowerCase()); number++) candidate = base.replace(/(\.[^.]+)$/, ` (${number})$1`);
+      for (let number = 1; names.has(candidate.toLowerCase()); number++) { const dot=base.lastIndexOf('.'); candidate=formatFilename(base.slice(0,dot),base.slice(dot+1),` (${number})`); }
       signal.throwIfAborted();
       const target = await directory.getFileHandle(candidate, {create: true});
       finalName = candidate;
@@ -143,7 +170,7 @@ async function recordedDownload(root, item, cache) {
   try {
     const directory = await root.getDirectoryHandle(folder);
     const file = await (await directory.getFileHandle(parts[1])).getFile();
-    if (file.size !== record.size || (record.lastModified && file.lastModified !== record.lastModified)) return null;
+    if (file.size !== record.size || (record.lastModified && file.lastModified !== record.lastModified) || !await validLocalBook(file,parts[1])) return null;
     return {filename:record.filename, size:record.size, skipped:true, recorded:true};
   } catch (error) { if (error.name === 'NotFoundError') return null; throw fileError('无法校验已记录的书籍，请检查目录访问权限。'); }
 }
@@ -156,10 +183,17 @@ async function saveProgress(root, item, result) {
     if (file.size !== result.size) throw fileError('书籍已保存，但大小改变，未记录为已完成。');
     const books = (await readProgress(root, folder)).filter(entry => entry.requestedFilename !== item.filename || (entry.bookKey || '') !== (item.bookKey || ''));
     books.push({requestedFilename:item.filename, filename:result.filename, size:result.size, lastModified:file.lastModified || null, bookKey:item.bookKey || '', title:item.title, author:item.author || '', extension:item.extension || ''});
-    const handle = await directory.getFileHandle(progressFileName, {create:true});
-    const writable = await handle.createWritable();
-    try { await writable.write(JSON.stringify({version:1, books})); await writable.close(); }
-    catch (error) { await writable.abort().catch(() => {}); throw fileError('书籍已保存，但下载记录写入失败；请检查目录权限或空间。'); }
+    let handle, writable, created=false;
+    try {
+      try { handle=await directory.getFileHandle(progressFileName); }
+      catch (error) { if(error.name!=='NotFoundError')throw error;handle=await directory.getFileHandle(progressFileName,{create:true});created=true; }
+      writable = await handle.createWritable();
+      await writable.write(JSON.stringify({version:1, books})); await writable.close();
+    } catch (error) {
+      if(writable)await writable.abort().catch(() => {});
+      if(created && (await handle.getFile()).size === 0)await directory.removeEntry(progressFileName).catch(() => {});
+      throw fileError('书籍已保存，但下载记录写入失败；请检查目录权限或空间后重试补写。');
+    }
   });
 }
 
@@ -167,6 +201,7 @@ class DirectoryQueue {
   constructor(directory, changed) {
     this.directory = directory; this.changed = changed;
     this.pending = []; this.results = []; this.diagnostics = []; this.intervalSeconds = 60;
+    this.pendingRecords = new Map();
     this.concurrency = 1; this.active = new Set(); this.lastStartedAt = null;
     this.running = false; this.paused = false; this.stopped = false; this.nextAt = 0; this.retryNotBefore = 0;
   }
@@ -183,13 +218,13 @@ class DirectoryQueue {
   }
   start(items) {
     this.checkRetryWait();
-    if (this.running || this.pending.length || this.active.size) throw new Error('请先完成或停止当前任务');
+    if (this.running || this.pending.length || this.active.size || this.pendingRecords.size) throw new Error('请先完成当前任务或重试补写完成记录');
     this.pending = [...items]; this.items = [...items]; this.results = []; this.diagnostics = [];
     this.paused = false; this.stopped = false; this.nextAt = 0; this.lastStartedAt = null; this.error = '';
     return this.run();
   }
   stop() {
-    this.stopped = true; this.paused = false; this.error = ''; this.pending = [];
+    this.stopped = true; this.paused = Boolean(this.pendingRecords.size); this.error = this.paused ? '已停止下载，仍有完成记录待补写。' : ''; this.pending = [];
     for (const task of this.active) { task.cancelled = true; task.controller.abort(); }
     this.changed(this);
   }
@@ -202,7 +237,7 @@ class DirectoryQueue {
     const seconds = Math.ceil((this.retryNotBefore - Date.now()) / 1000);
     if (seconds > 0) throw new Error(`服务器要求等待，还需 ${seconds} 秒后才能重试。`);
   }
-  resume() { this.checkRetryWait(); this.paused = false; this.error = ''; return this.run(); }
+  resume() { this.checkRetryWait(); this.stopped = false; this.paused = false; this.error = ''; return this.run(); }
   async waitForNext() {
     while (!this.stopped && !this.paused && Date.now() < this.nextAt) {
       this.changed(this); await new Promise(resolve => setTimeout(resolve, Math.min(1000, this.nextAt - Date.now())));
@@ -212,6 +247,10 @@ class DirectoryQueue {
     if (this.running) return;
     this.running = true; this.changed(this);
     try {
+      for (const [item,result] of this.pendingRecords) {
+        if(this.stopped || this.paused)break;
+        await saveProgress(this.directory,item,result);this.pendingRecords.delete(item);this.changed(this);
+      }
       const cache = new Map();
       for (const item of [...this.pending]) {
         if (this.stopped || this.paused) break;
@@ -238,7 +277,7 @@ class DirectoryQueue {
       }
     } catch (error) {
       this.paused = true; this.error = `恢复下载失败：${error.message}`;
-      const item = this.pending[0];
+      const item = this.pending[0] || this.pendingRecords.keys().next().value;
       if (item) this.diagnostics.push({time:new Date().toISOString(), title:item.title, stage:'file', host:new URL(item.url).hostname, message:error.message, httpStatus:null});
       this.changed(this);
     } finally {
@@ -261,12 +300,13 @@ class DirectoryQueue {
       });
       this.results.push({...result, id: task.id, title: task.title});
       completed = true; clearTimeout(idleTimer);
-      try { await saveProgress(this.directory, task, result); }
+      this.pendingRecords.set(task.item,result);
+      try { await saveProgress(this.directory, task, result); this.pendingRecords.delete(task.item); if(this.stopped && !this.pendingRecords.size){this.paused=false;this.error='';} }
       catch (error) { throw fileError(`书籍已保存，但完成记录未更新：${error.message}`); }
     } catch (error) {
-      if (!this.stopped) {
+      if (!this.stopped || completed) {
         if (!completed) { this.pending.push(task.item); this.pending.sort((a,b) => this.items.indexOf(a) - this.items.indexOf(b)); }
-        if (!task.cancelled || timedOut) {
+        if (completed || !task.cancelled || timedOut) {
           if (error.retryAt) this.retryNotBefore = Math.max(this.retryNotBefore, error.retryAt);
           this.paused = true;
           const message = String(error.message).replace(/https?:\/\/[^\s"'<>]+/g, url => { try { return new URL(url).origin; } catch { return '[地址已省略]'; } }).slice(0, 400);

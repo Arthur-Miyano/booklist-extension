@@ -116,6 +116,12 @@ async function tests(){
     if(host==='1lib.sk'||host==='zh.1lib.sk')origins.push('https://dl-alps-2.gcdn.ac/*');
     assert.equal(JSON.stringify(permissionCalls.at(-1)),JSON.stringify({origins}),`${host} 的授权应包含实际来源，且只有站点及其子域名请求已知文件服务器`);
   }
-  console.log('完整侧栏流程与自动读取、自由间隔及0秒恢复检查通过');
+  source={...source,pageUrl:'https://z-library.website/booklist/record-retry',name:'补写测试',total:'1',books:bookBatch(1)};await elements.read.emit('click');
+  const recordFolder=await root.getDirectoryHandle('补写测试',{create:true}),nativeRecordHandle=recordFolder.getFileHandle.bind(recordFolder);let recordAttempts=0,pdfRequests=0;
+  recordFolder.getFileHandle=async(name,options)=>{const handle=await nativeRecordHandle(name,options);if(name==='.booklist-progress.json'){const writer=handle.createWritable;handle.createWritable=async()=>{if(++recordAttempts===1)throw new Error('temporary');return writer();};}return handle;};
+  context.fetch=async()=>{pdfRequests++;return new Response('%PDF-1.7\nvalid');};elements.rights.checked=true;await elements.rights.emit('change');await elements.start.emit('click');
+  assert(elements.status.textContent.includes('记录'));assert.equal(elements.start.hidden,true);assert.equal(elements.resume.hidden,false);assert(elements['batch-note'].textContent.includes('待补写记录 1 本'));
+  await elements.resume.emit('click');assert.equal(pdfRequests,1);assert.equal(recordAttempts,2);assert(elements.status.textContent.includes('已完成'));
+  console.log('完整侧栏流程与自动读取、自由间隔、0秒恢复及记录补写检查通过');
 }
 tests().catch(error=>{console.error(error);process.exitCode=1;});

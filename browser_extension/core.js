@@ -37,6 +37,11 @@ function safeBrowserName(text) {
   const value = Array.from(String(text).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim()).slice(0, 80).join('').replace(/^[ .]+|[ .]+$/g, '');
   return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(value) ? `_${value}` : value || '书籍';
 }
+function safeBrowserFilename(stem, extension, suffix='') {
+  const tail=`.${extension}`, limit=Math.min(240-tail.length,255-tail.length-suffix.length);
+  const clipped=String(stem).slice(0,limit).replace(/[\uD800-\uDBFF]$/,'').replace(/[ .]+$/,'');
+  return `${clipped || '书籍'}${suffix}${tail}`;
+}
 
 function prepareBrowserDownload(book, pageUrl, name) {
   const source = new URL(pageUrl);
@@ -50,7 +55,7 @@ function prepareBrowserDownload(book, pageUrl, name) {
   }
   return {
     url: target.href,
-    filename: `${safeBrowserName(name)}/${safeBrowserName(book.title)} - ${safeBrowserName(book.author)}.${extension}`,
+    filename: `${safeBrowserName(name)}/${safeBrowserFilename(`${safeBrowserName(book.title)} - ${safeBrowserName(book.author)}`,extension)}`,
     title: book.title,
     author: book.author,
     extension,
@@ -80,4 +85,4 @@ function booklistReadingState(page) {
   return {expected, loaded, complete: expected !== null && loaded === expected};
 }
 
-if (typeof module !== 'undefined') module.exports = {readBookPage, safeBrowserName, prepareBrowserDownload, clickLoadMore, booklistReadingState};
+if (typeof module !== 'undefined') module.exports = {readBookPage, safeBrowserName, safeBrowserFilename, prepareBrowserDownload, clickLoadMore, booklistReadingState};

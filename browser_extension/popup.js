@@ -1,7 +1,7 @@
 const element = id => document.getElementById(id);
 let page = null, sourceId = null, windowId = null, queue = null, reading = false, loadingAll = false, preparing = false;
 let chosen = new Set(), cancelLoad = false;
-const busy = () => preparing || Boolean(queue?.running || queue?.pending.length);
+const busy = () => preparing || Boolean(queue?.running || queue?.pending.length || queue?.pendingRecords.size);
 const displayBook = book => element('clean').checked ? {...book, ...cleanBook(book)} : book;
 const selected = () => page?.books.filter(book => chosen.has(book.id)).map(displayBook) || [];
 const downloadable = books => books.filter(book => { try { prepareBrowserDownload(book, page.pageUrl, page.name); return true; } catch { return false; } });
@@ -20,12 +20,12 @@ function update() {
   element('choose-folder').disabled = busy();
   element('export').disabled = busy() || loadingAll || reading || !selected().length;
   element('start').disabled = busy() || loadingAll || reading || !queue || !element('rights').checked || !downloadable(selected()).length;
-  element('start').hidden = Boolean(queue?.running || queue?.pending.length);
+  element('start').hidden = Boolean(queue?.running || queue?.pending.length || queue?.pendingRecords.size);
   element('pause').hidden = !queue?.running || queue.paused;
   element('resume').hidden = !queue?.paused;
   element('resume').disabled = Boolean(queue?.running);
   element('resume').textContent = queue?.error ? '重试并继续' : '继续下载';
-  element('stop').hidden = !queue?.running && !queue?.pending.length;
+  element('stop').hidden = !queue?.running && !queue?.pending.length && !queue?.pendingRecords.size;
   element('rights').disabled = busy();
   element('load-all').disabled = busy() || reading;
   element('load-all').textContent = loadingAll ? '停止读取' : '自动读全';
@@ -160,14 +160,15 @@ function showQueue(current) {
   const saved = current.results.filter(result => !result.skipped).length;
   const skipped = processed - saved;
   const restored = current.results.filter(result => result.recorded).length;
+  const records = current.pendingRecords.size;
   const revealTransfer = element('transfer').hidden;
   element('transfer').hidden = false;
   element('task-count').textContent = `${processed} / ${total} 本`;
   element('batch-progress').value = total ? processed / total * 100 : 0;
-  element('batch-note').textContent = `已保存 ${saved} 本 · 已跳过 ${skipped} 本${restored ? `（记录恢复 ${restored} 本，未请求）` : ''} · 剩余 ${current.pending.length + tasks.length} 本`;
+  element('batch-note').textContent = `已保存 ${saved} 本 · 已跳过 ${skipped} 本${restored ? `（记录恢复 ${restored} 本，未请求）` : ''} · 剩余 ${current.pending.length + tasks.length} 本${records ? ` · 待补写记录 ${records} 本` : ''}`;
   const wait = Math.max(0, Math.ceil((current.nextAt - now) / 1000));
   const scheduling = current.stopped ? '已停止新增下载' : current.paused ? '已暂停新增下载' : tasks.length >= current.concurrency ? '等待空余名额' : current.pending.length ? `${wait} 秒后启动下一本` : '等待在途下载完成';
-  element('current-title').textContent = tasks.length ? `正在下载 ${tasks.length} 本 / 上限 ${current.concurrency} 本` : current.paused ? '任务已暂停' : current.stopped ? '任务已停止' : current.pending.length ? scheduling : '下载完成';
+  element('current-title').textContent = tasks.length ? `正在下载 ${tasks.length} 本 / 上限 ${current.concurrency} 本` : records ? '完成记录待补写' : current.paused ? '任务已暂停' : current.stopped ? '任务已停止' : current.pending.length ? scheduling : '下载完成';
   element('bytes').textContent = tasks.length ? scheduling : current.paused ? '继续时按原顺序重试' : current.pending.length ? '启动间隔中' : '书籍与 Excel 已保存到书单文件夹';
   element('speed').textContent = `总速度 ${formatBytes(current.speed)}/s`;
   element('active-downloads').replaceChildren(...tasks.map(task => {
