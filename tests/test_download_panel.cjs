@@ -96,6 +96,14 @@ async function tests(){
   source={...source,pageUrl:'https://z-library.website/booklist/mismatch',books:bookBatch(21),total:'20'};
   await elements.read.emit('click');assert(elements.status.textContent.includes('数量不一致'));assert(!elements.status.textContent.includes('读取成功'));
   localPreferences.intervalSeconds=0;await vm.runInContext('initialize()',context);assert.equal(elements.interval.value,0,'重开侧栏不能把保存的0秒重置为默认60秒');
+  for(const host of ['zh.z-library.website','z-library.website','other.example','z-library.website.other.example','evil-z-library.website']) {
+    source={...source,pageUrl:`https://${host}/booklist/permissions`,books:bookBatch(1),total:'1'};
+    await elements.read.emit('click');
+    await vm.runInContext('authorizeDownload()',context);
+    const origins=[`https://${host}/*`];
+    if(host==='zh.z-library.website'||host==='z-library.website')origins.push('https://dln1.ncdn.ec/*');
+    assert.equal(JSON.stringify(permissionCalls.at(-1)),JSON.stringify({origins}),`${host} 的授权应包含实际来源，且只有站点及其子域名请求已知文件服务器`);
+  }
   console.log('完整侧栏流程与自动读取、自由间隔及0秒恢复检查通过');
 }
 tests().catch(error=>{console.error(error);process.exitCode=1;});

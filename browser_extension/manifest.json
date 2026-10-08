@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "z站书单便捷下载",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "description": "在当前网页旁读取书单、导出 Excel、按顺序启动下载，最多 10 本同时传输。按书单目录归档与检查重复文件，无需本地服务。",
   "minimum_chrome_version": "116",
   "permissions": ["activeTab", "scripting", "downloads", "storage", "sidePanel"],

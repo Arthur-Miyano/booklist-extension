@@ -101,7 +101,7 @@
 | `downloads` | 未选择目录时单独导出 Excel |
 | 可选网站访问 | 下载时精确申请书单来源和实际文件服务器的访问权限 |
 
-`optional_host_permissions` 的 HTTPS 范围用于支持站点授权申请；运行时不会一次性请求所有网站。当前 `z-library.website` 下载链路还会精确申请 `dln1.ncdn.ec` 文件服务器访问。
+`optional_host_permissions` 的 HTTPS 范围用于支持站点授权申请；运行时不会一次性请求所有网站。`z-library.website` 及其子域名（例如 `zh.z-library.website`）下载时，会申请当前来源的访问权限，以及 `dln1.ncdn.ec` 文件服务器的精确访问权限。
 
 扩展使用浏览器已有登录会话，不提取或保存 Cookie，不读取密码。目录访问由用户在浏览器原生对话框中授权。Excel 离线生成，书目不上传到外部服务，没有统计和远程脚本。失败诊断省略完整下载链接及其参数。
 
