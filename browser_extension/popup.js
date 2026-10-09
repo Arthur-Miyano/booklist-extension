@@ -193,9 +193,9 @@ function showQueue(current) {
   update();
 }
 async function authorizeDownload() {
-  const source = new URL(page.pageUrl); const origins = [`${source.origin}/*`];
-  if (['z-library.website','1lib.sk'].some(domain => source.hostname === domain || source.hostname.endsWith(`.${domain}`))) origins.push('https://dln1.ncdn.ec/*','https://dl-alps-2.gcdn.ac/*');
-  if (!await chrome.permissions.request({origins}) || !await chrome.permissions.contains({origins})) throw new Error('网站授权未生效，请允许书单来源与文件服务器的访问权限后重试。');
+  const origins = ['https://*/*'];
+  if (await chrome.permissions.contains({origins})) return;
+  if (!await chrome.permissions.request({origins}) || !await chrome.permissions.contains({origins})) throw new Error('下载访问授权未生效，请允许一次性访问 HTTPS 网站；用于跟随镜像与文件服务器跳转，不增加账号下载权限。');
 }
 async function exportExcel(books) {
   const bytes = await createBooklistExcel(page.name, books);

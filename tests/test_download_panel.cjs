@@ -15,7 +15,7 @@ class Element {
 async function tests(){
   const html=fs.readFileSync(require.resolve('../browser_extension/popup.html'),'utf8'), elements={};
   for(const match of html.matchAll(/<(\w+)[^>]*id="([^"]+)"[^>]*>/g)){const e=new Element(match[1]);elements[match[2]]=e;e.hidden=match[0].includes(' hidden');e.disabled=match[0].includes(' disabled');e.min=match[0].match(/min="([^"]+)"/)?.[1];e.max=match[0].match(/max="([^"]+)"/)?.[1];}
-  const root=fakeDirectory('我的书库'); let grants=true,contained=true,permissionCalls=[],downloads=[],folderPrompts=0,storageListener,localPreferences={},loadMoreClicks=0,moreAvailable=true,stalled=false;
+  const root=fakeDirectory('我的书库'); let grants=true,contained=false,grantEffective=true,permissionCalls=[],downloads=[],folderPrompts=0,storageListener,localPreferences={},loadMoreClicks=0,moreAvailable=true,stalled=false;
   let source={pageUrl:'https://z-library.website/booklist/1',name:'测试书单',total:'3',books:[{title:'局外人（译文经典）',author:'加缪 (Albert Camus)',download:'/dl/1',extension:'pdf'},{title:'英文书',author:'English Author',download:'/dl/2',extension:'pdf'}]};
   let readWait=0,errorOnClick=false;const clickWaits=[];
   const context=vm.createContext({console,URL,Blob,TextDecoder,Uint8Array,AbortController,crypto,Date,Promise,JSZip:require('../browser_extension/vendor/jszip.min.js'),
@@ -29,13 +29,14 @@ async function tests(){
         clickWaits.push(readWait);if(errorOnClick)source.siteError='来源网页显示错误或限制提示，请在原网页处理后重试。';return[{result:true}];
       }return[{result:structuredClone(source)}];}},
       storage:{local:{get:async()=>localPreferences,set:async data=>Object.assign(localPreferences,data)},session:{get:async()=>({'source-3':{tabId:7}})},onChanged:{addListener:fn=>storageListener=fn}},
-      permissions:{request:async options=>{permissionCalls.push(options);return grants;},contains:async()=>contained},
+      permissions:{request:async options=>{permissionCalls.push(options);if(grants&&grantEffective)contained=true;return grants;},contains:async options=>{assert.equal(JSON.stringify(options),JSON.stringify({origins:['https://*/*']}));return contained;}},
       downloads:{download:async data=>{downloads.push(data);return 1;}}},
     fetch:async()=>new Response('%PDF-1.7\ncontent',{headers:{'content-type':'application/pdf','content-length':'16'}})
   });
   for(const name of ['core','clean','excel','directory','popup'])vm.runInContext(fs.readFileSync(require.resolve(`../browser_extension/${name}.js`),'utf8'),context,{filename:`${name}.js`});
   const settle=async()=>{for(let i=0;i<100;i++){await new Promise(resolve=>setTimeout(resolve,1));if(elements['booklist-name'].textContent==='测试书单'&&!elements.read.disabled)return;}throw new Error('初始化未完成');};
   await settle();
+  assert.equal(permissionCalls.length,0,'打开侧栏和读取页面不申请通用权限');
   assert.equal(elements.selection.textContent,'2 / 2 本已选','打开侧栏只能读取已显示书籍');assert.equal(loadMoreClicks,0,'打开扩展不能自动点击网页');assert(elements.start.disabled);assert.equal(elements['load-all'].hidden,false);
   for(const seconds of [0,0.25,7200]) {elements.interval.value=String(seconds);await elements.interval.emit('change');assert.equal(localPreferences.intervalSeconds,seconds);}
   await elements['load-all'].emit('click');assert.equal(elements.selection.textContent,'3 / 3 本已选');assert.equal(elements['load-all'].hidden,true);assert.equal(elements.books.children.length,3);
@@ -47,14 +48,14 @@ async function tests(){
   await elements.export.emit('click');assert.equal(permissionCalls.length,0,'单独导出不请求下载网站权限');assert.equal(root.directories.get('测试书单').files.size,1);assert.equal(downloads.length,0,'已选目录直接保存Excel');
   elements.rights.checked=true;await elements.rights.emit('change');elements.interval.value='30';await elements.interval.emit('change');
   grants=false;await elements.start.emit('click');assert(elements.status.textContent.includes('授权'));assert.equal(root.directories.get('测试书单').files.size,1,'未授权不能生成下载任务或写入文件');
-  grants=true;contained=false;await elements.start.emit('click');assert.equal(root.directories.get('测试书单').files.size,1);
-  contained=true;let failing=true;
+  grants=true;grantEffective=false;contained=false;await elements.start.emit('click');assert.equal(root.directories.get('测试书单').files.size,1);
+  grantEffective=true;let failing=true;
   context.fetch=async()=>failing?new Response('limited',{status:429}):new Response('%PDF-1.7\ncontent',{headers:{'content-type':'application/pdf','content-length':'16'}});
   await elements.start.emit('click');assert.equal(elements.resume.hidden,false);assert.equal(elements.resume.textContent,'重试并继续');assert(elements.status.textContent.includes('429'));assert.equal(elements['task-count'].textContent,'0 / 3 本');
   assert(elements.transfer.revealed,'开始后下载状态应自动进入视野');
-  failing=false;await elements.resume.emit('click');assert.equal(elements['task-count'].textContent,'3 / 3 本');assert.equal(elements['batch-progress'].value,100);assert.equal(elements['diagnostic-box'].hidden,false,'失败记录可回看');
+  let grantsBeforeResume=permissionCalls.length;failing=false;await elements.resume.emit('click');assert.equal(permissionCalls.length,grantsBeforeResume,'已授权后重试不能再次申请权限');assert.equal(elements['task-count'].textContent,'3 / 3 本');assert.equal(elements['batch-progress'].value,100);assert.equal(elements['diagnostic-box'].hidden,false,'失败记录可回看');
   const folder=root.directories.get('测试书单');assert(folder.files.has('局外人 - 加缪 (Albert Camus).pdf'));assert(folder.files.has('英文书 - English Author.pdf'));assert.equal(folderPrompts,1);
-  assert.equal(JSON.stringify(permissionCalls.at(-1)),JSON.stringify({origins:['https://z-library.website/*','https://dln1.ncdn.ec/*','https://dl-alps-2.gcdn.ac/*']}));
+  assert.equal(JSON.stringify(permissionCalls.at(-1)),JSON.stringify({origins:['https://*/*']}));
   const count=folder.files.size;context.fetch=async()=>{throw new Error('恢复完整记录时不能发请求');};await elements.start.emit('click');assert.equal(folder.files.size,count+1,'再次下载只新增Excel，不重复保存同大小书籍');assert(elements['batch-note'].textContent.includes('已跳过 3 本'));assert(elements['batch-note'].textContent.includes('记录恢复 3 本，未请求'));
   elements.all.checked=false;await elements.all.emit('change');assert(elements.start.disabled);assert(elements.export.disabled);
   elements.all.checked=true;await elements.all.emit('change');
@@ -111,9 +112,11 @@ async function tests(){
     source={...source,pageUrl:`https://${host}/booklist/permissions`,books:bookBatch(1),total:'1'};
     await elements.read.emit('click');
     await vm.runInContext('authorizeDownload()',context);
-    const origins=[`https://${host}/*`];
-    if(['zh.z-library.website','z-library.website','1lib.sk','zh.1lib.sk'].includes(host))origins.push('https://dln1.ncdn.ec/*','https://dl-alps-2.gcdn.ac/*');
-    assert.equal(JSON.stringify(permissionCalls.at(-1)),JSON.stringify({origins}),`${host} 的授权应包含实际来源，且只有站点及其子域名请求已知文件服务器`);
+    assert.equal(permissionCalls.length,grantsBeforeResume,host+' 切换镜像后不能再次请求授权');
+    contained=false;
+    await vm.runInContext('authorizeDownload()',context);
+    assert.equal(JSON.stringify(permissionCalls.at(-1)),JSON.stringify({origins:['https://*/*']}),'撤销授权后应重新申请通用权限');
+    grantsBeforeResume=permissionCalls.length;
   }
   source={...source,pageUrl:'https://z-library.website/booklist/record-retry',name:'补写测试',total:'1',books:bookBatch(1)};await elements.read.emit('click');
   const recordFolder=await root.getDirectoryHandle('补写测试',{create:true}),nativeRecordHandle=recordFolder.getFileHandle.bind(recordFolder);let recordAttempts=0,pdfRequests=0;
