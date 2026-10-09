@@ -54,7 +54,7 @@ async function tests(){
   assert(elements.transfer.revealed,'开始后下载状态应自动进入视野');
   failing=false;await elements.resume.emit('click');assert.equal(elements['task-count'].textContent,'3 / 3 本');assert.equal(elements['batch-progress'].value,100);assert.equal(elements['diagnostic-box'].hidden,false,'失败记录可回看');
   const folder=root.directories.get('测试书单');assert(folder.files.has('局外人 - 加缪 (Albert Camus).pdf'));assert(folder.files.has('英文书 - English Author.pdf'));assert.equal(folderPrompts,1);
-  assert.equal(JSON.stringify(permissionCalls.at(-1)),JSON.stringify({origins:['https://z-library.website/*','https://dln1.ncdn.ec/*']}));
+  assert.equal(JSON.stringify(permissionCalls.at(-1)),JSON.stringify({origins:['https://z-library.website/*','https://dln1.ncdn.ec/*','https://dl-alps-2.gcdn.ac/*']}));
   const count=folder.files.size;context.fetch=async()=>{throw new Error('恢复完整记录时不能发请求');};await elements.start.emit('click');assert.equal(folder.files.size,count+1,'再次下载只新增Excel，不重复保存同大小书籍');assert(elements['batch-note'].textContent.includes('已跳过 3 本'));assert(elements['batch-note'].textContent.includes('记录恢复 3 本，未请求'));
   elements.all.checked=false;await elements.all.emit('change');assert(elements.start.disabled);assert(elements.export.disabled);
   elements.all.checked=true;await elements.all.emit('change');
@@ -112,8 +112,7 @@ async function tests(){
     await elements.read.emit('click');
     await vm.runInContext('authorizeDownload()',context);
     const origins=[`https://${host}/*`];
-    if(host==='zh.z-library.website'||host==='z-library.website')origins.push('https://dln1.ncdn.ec/*');
-    if(host==='1lib.sk'||host==='zh.1lib.sk')origins.push('https://dl-alps-2.gcdn.ac/*');
+    if(['zh.z-library.website','z-library.website','1lib.sk','zh.1lib.sk'].includes(host))origins.push('https://dln1.ncdn.ec/*','https://dl-alps-2.gcdn.ac/*');
     assert.equal(JSON.stringify(permissionCalls.at(-1)),JSON.stringify({origins}),`${host} 的授权应包含实际来源，且只有站点及其子域名请求已知文件服务器`);
   }
   source={...source,pageUrl:'https://z-library.website/booklist/record-retry',name:'补写测试',total:'1',books:bookBatch(1)};await elements.read.emit('click');

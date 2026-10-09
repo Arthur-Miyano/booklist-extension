@@ -1,4 +1,4 @@
-# z站书单便捷下载浏览器扩展 2.4.1
+# z站书单便捷下载浏览器扩展 2.4.2
 
 在 Edge / Chrome 扩展管理页，加载此文件夹。点击工具栏图标即打开当前网页旁的侧栏，没有本地服务或跳转页面。
 
@@ -14,7 +14,7 @@
 
 重新开始下载会先检查书单文件夹里的 `.booklist-progress.json`，匹配本地完整文件的已完成书籍不再请求；失败、未完成及文件缺失或改变的书继续下载。关闭侧栏后重新选择原父目录即可恢复。请保留记录文件；旧版本没有记录的书，首次仍需校验并建立记录。
 
-权限：activeTab、scripting、downloads、storage、sidePanel；可选网站访问只在下载动作时精确申请，没有 cookies 权限。`z-library.website` 当前文件服务器是 `dln1.ncdn.ec`。
+权限：activeTab、scripting、downloads、storage、sidePanel；可选网站访问只在下载动作时精确申请，没有 cookies 权限。`z-library.website`、`1lib.sk` 及子域名会申请两个已确认的文件服务器 `dln1.ncdn.ec`、`dl-alps-2.gcdn.ac` 的精确权限，支持不同入口交叉使用它们。
 
 二进制书籍检查基本格式标识，TXT 使用独立错误文本规则；完成记录恢复也会检查本地文件前缀。记录写入失败后保持侧栏打开，重试只补写记录，不重新下载；原有有效记录会保留。完整文件名按 UTF-16 长度限制，并保留重名后缀空间。
 
